@@ -1,0 +1,22 @@
+{% extends "base.html" %}{% block body %}<main><section class="panel designer"><h2>🎨 쇼핑몰 디자인 관리</h2>
+<p>수정 후 저장하면 메인 쇼핑몰에 바로 반영됩니다.</p>
+<form method="post" action="/admin/design" class="designform" id="designForm">
+<label>쇼핑몰 이름<input name="shop_name" value="{{settings.shop_name}}" required></label>
+<label>메인 제목<input name="hero_title" value="{{settings.hero_title}}" required></label>
+<label>메인 설명<input name="hero_text" value="{{settings.hero_text}}" required></label>
+<div class="colorgrid">
+<label>버튼 색상<input type="color" name="accent_color" value="{{settings.accent_color}}"></label>
+<label>배경색<input type="color" name="background_color" value="{{settings.background_color}}"></label>
+<label>배너 시작색<input type="color" name="hero_start" value="{{settings.hero_start}}"></label>
+<label>배너 끝색<input type="color" name="hero_end" value="{{settings.hero_end}}"></label>
+</div>
+<div class="sitepreview" id="sitePreview"><b id="pvName">{{settings.shop_name}}</b>
+<div class="pvHero" id="pvHero"><h3 id="pvTitle">{{settings.hero_title}}</h3><p id="pvText">{{settings.hero_text}}</p><button type="button" id="pvButton">버튼 미리보기</button></div></div>
+<button type="submit">디자인 저장</button></form></section>
+<script>
+document.addEventListener("DOMContentLoaded",()=>{const f=document.getElementById("designForm");const u=()=>{pvName.textContent=f.shop_name.value;pvTitle.textContent=f.hero_title.value;pvText.textContent=f.hero_text.value;sitePreview.style.background=f.background_color.value;pvHero.style.background=`linear-gradient(135deg,${f.hero_start.value},${f.hero_end.value})`;pvButton.style.background=f.accent_color.value};f.addEventListener("input",u);u()});
+</script><div class="adminhead"><h1>관리자</h1><a href="/admin/logout">관리자 로그아웃</a></div>
+<section class="panel"><h2>회원 관리</h2>{% for u in users %}<div class="tr wrap"><span><b>{{u.name}}</b><br>{{u.email}} · {{u.phone}}</span><span>주문 {{u.order_count}}건<br>누적 {{"{:,}".format(u.spent)}}원</span><span>가입 {{u.created_at}}</span><form method="post" action="/admin/users/{{u.id}}/status"><select name="status"><option {% if u.status=='정상' %}selected{% endif %}>정상</option><option {% if u.status=='정지' %}selected{% endif %}>정지</option><option {% if u.status=='탈퇴' %}selected{% endif %}>탈퇴</option></select><button>변경</button></form></div>{% else %}<p>회원 없음</p>{% endfor %}</section>
+<section class="panel"><h2>주문 관리</h2>{% for o in orders %}<div class="tr wrap"><span>#{{o.id}} {{o.customer_name}}</span><span>{{"{:,}".format(o.total)}}원</span><span>{{o.address}}</span><form method="post" action="/admin/orders/{{o.id}}/status"><select name="status">{% for s in ['주문접수','결제확인','배송준비','배송중','완료','취소'] %}<option {% if o.status==s %}selected{% endif %}>{{s}}</option>{% endfor %}</select><button>변경</button></form></div>{% endfor %}</section>
+<section class="panel"><h2>상품 등록</h2><form class="formgrid" method="post" action="/admin/products"><input name="name" placeholder="상품명" required><input name="category" placeholder="카테고리" required><input name="price" type="number" placeholder="가격" required><input name="stock" type="number" placeholder="재고" required><input name="emoji" placeholder="대표 이모지"><input name="description" placeholder="설명"><button>등록</button></form></section>
+<section class="panel"><h2>재고 관리</h2>{% for p in products %}<div class="tr"><span>{{p.emoji}} {{p.name}}</span><span>{{"{:,}".format(p.price)}}원</span><form method="post" action="/admin/products/{{p.id}}/stock"><input class="small" name="stock" type="number" value="{{p.stock}}"><button>재고변경</button></form></div>{% endfor %}</section></main>{% endblock %}

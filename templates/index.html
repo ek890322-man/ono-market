@@ -1,0 +1,6 @@
+{% extends "base.html" %}{% block body %}
+<section class="hero"><h1>{{site.hero_title}}</h1><p>{{site.hero_text}}</p></section>
+<main><div class="shopbar"><input id="search" placeholder="상품 검색"><button onclick="openCart()">장바구니 <b id="count">0</b></button></div><div id="filters" class="filters"></div><div id="grid" class="grid"></div></main>
+<div id="shade" class="shade" onclick="closeCart()"></div><aside id="cartDrawer" class="drawer"><h2>장바구니</h2><div id="items" class="grow"></div><b id="total">0원</b><button onclick="showOrder()">주문하기</button><button class="light" onclick="closeCart()">닫기</button></aside>
+<div id="modal" class="modal"><form id="orderForm"><h2>배송 정보</h2><input name="name" value="{{session.user_name or ''}}" placeholder="주문자명" required><input name="phone" placeholder="연락처" required><input name="address" placeholder="배송 주소" required><textarea name="memo" placeholder="배송 메모"></textarea><button>주문 접수</button><button type="button" class="light" onclick="modal.style.display='none'">취소</button></form></div>
+<script>window.PRODUCTS={{products_json|tojson}};</script><script src="{{url_for('static',filename='shop.js')}}"></script>{% endblock %}

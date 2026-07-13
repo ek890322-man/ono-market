@@ -1,0 +1,263 @@
+
+from flask import Flask, render_template, request, redirect, url_for, session, jsonify, flash
+import sqlite3, os
+from functools import wraps
+from werkzeug.security import generate_password_hash, check_password_hash
+
+app = Flask(__name__)
+app.secret_key = os.environ.get("SECRET_KEY", "dev-secret-change-me")
+DATA_DIR = os.environ.get("DATA_DIR", os.path.dirname(os.path.abspath(__file__)))
+os.makedirs(DATA_DIR, exist_ok=True)
+DB = os.path.join(DATA_DIR, "shop.db")
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "change-me")
+
+def db():
+    con = sqlite3.connect(DB)
+    con.row_factory = sqlite3.Row
+    return con
+
+def init_db():
+    con=db()
+    con.executescript("""
+    CREATE TABLE IF NOT EXISTS users(
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      email TEXT UNIQUE NOT NULL,
+      password_hash TEXT NOT NULL,
+      name TEXT NOT NULL,
+      phone TEXT NOT NULL DEFAULT '',
+      address TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL DEFAULT '정상',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS products(
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL, category TEXT NOT NULL, price INTEGER NOT NULL,
+      stock INTEGER NOT NULL DEFAULT 0, emoji TEXT DEFAULT '📦',
+      description TEXT DEFAULT '', active INTEGER DEFAULT 1
+    );
+    CREATE TABLE IF NOT EXISTS orders(
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER,
+      customer_name TEXT NOT NULL, phone TEXT NOT NULL, address TEXT NOT NULL,
+      memo TEXT DEFAULT '', total INTEGER NOT NULL, status TEXT DEFAULT '주문접수',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS order_items(
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      order_id INTEGER NOT NULL, product_id INTEGER NOT NULL,
+      product_name TEXT NOT NULL, price INTEGER NOT NULL, qty INTEGER NOT NULL
+    );
+    """)
+    con.execute("""CREATE TABLE IF NOT EXISTS site_settings(
+      id INTEGER PRIMARY KEY,
+      shop_name TEXT NOT NULL DEFAULT 'ONO MARKET',
+      hero_title TEXT NOT NULL DEFAULT 'GOOD THINGS, EVERY DAY.',
+      hero_text TEXT NOT NULL DEFAULT '매일 쓰는 물건일수록, 더 좋은 것으로.',
+      accent_color TEXT NOT NULL DEFAULT '#111827',
+      background_color TEXT NOT NULL DEFAULT '#f6f6f2',
+      hero_start TEXT NOT NULL DEFAULT '#e9e3d7',
+      hero_end TEXT NOT NULL DEFAULT '#cbd5c0'
+    )""")
+    con.execute("INSERT OR IGNORE INTO site_settings(id) VALUES(1)")
+    if con.execute("SELECT COUNT(*) c FROM products").fetchone()["c"] == 0:
+        seed=[
+          ("데일리 머그 2P","리빙",18900,20,"☕","매일 쓰기 좋은 심플한 머그 세트"),
+          ("소프트 실리콘 식판","육아",23900,15,"🧸","부드럽고 관리가 쉬운 식판"),
+          ("포근 코튼 타월 세트","리빙",32900,12,"🛁","도톰한 데일리 코튼 타월"),
+          ("우드 핸들 커트러리","키친",27900,10,"🍴","따뜻한 무드의 커트러리"),
+          ("데일리 베이비 빕","육아",15900,25,"👶","가볍고 편한 데일리 빕"),
+          ("클리어 글라스 4P","키친",24900,8,"🥛","깔끔한 투명 글라스 세트")
+        ]
+        con.executemany("INSERT INTO products(name,category,price,stock,emoji,description) VALUES(?,?,?,?,?,?)",seed)
+    con.commit(); con.close()
+
+@app.before_request
+def setup(): init_db()
+
+def login_required(f):
+    @wraps(f)
+    def wrap(*a, **kw):
+        if not session.get("user_id"):
+            flash("로그인이 필요합니다.")
+            return redirect(url_for("login"))
+        return f(*a, **kw)
+    return wrap
+
+def admin_required(f):
+    @wraps(f)
+    def wrap(*a, **kw):
+        if not session.get("admin"): return redirect(url_for("admin_login"))
+        return f(*a, **kw)
+    return wrap
+
+@app.context_processor
+def inject_site():
+    con=db()
+    site=con.execute("SELECT * FROM site_settings WHERE id=1").fetchone()
+    con.close()
+    return {"site": site}
+
+@app.get("/")
+def home():
+    con=db(); products=con.execute("SELECT * FROM products WHERE active=1 ORDER BY id DESC").fetchall(); con.close()
+    return render_template("index.html", products=products, products_json=[dict(p) for p in products])
+
+@app.route("/signup", methods=["GET","POST"])
+def signup():
+    if request.method=="POST":
+        email=request.form["email"].strip().lower()
+        pw=request.form["password"]
+        name=request.form["name"].strip()
+        phone=request.form["phone"].strip()
+        if len(pw)<6:
+            flash("비밀번호는 6자 이상 입력해주세요."); return render_template("signup.html")
+        con=db()
+        try:
+            con.execute("INSERT INTO users(email,password_hash,name,phone) VALUES(?,?,?,?)",
+                        (email,generate_password_hash(pw),name,phone))
+            con.commit(); flash("회원가입 완료! 로그인해주세요."); return redirect(url_for("login"))
+        except sqlite3.IntegrityError:
+            flash("이미 가입된 이메일입니다.")
+        finally: con.close()
+    return render_template("signup.html")
+
+@app.route("/login", methods=["GET","POST"])
+def login():
+    if request.method=="POST":
+        con=db()
+        u=con.execute("SELECT * FROM users WHERE email=?",(request.form["email"].strip().lower(),)).fetchone()
+        con.close()
+        if u and check_password_hash(u["password_hash"],request.form["password"]):
+            if u["status"]!="정상":
+                flash("이용이 제한된 계정입니다."); return render_template("login.html")
+            session["user_id"]=u["id"]; session["user_name"]=u["name"]
+            return redirect(url_for("home"))
+        flash("이메일 또는 비밀번호를 확인해주세요.")
+    return render_template("login.html")
+
+@app.get("/logout")
+def logout():
+    session.pop("user_id",None); session.pop("user_name",None)
+    return redirect(url_for("home"))
+
+@app.route("/mypage", methods=["GET","POST"])
+@login_required
+def mypage():
+    con=db()
+    if request.method=="POST":
+        con.execute("UPDATE users SET name=?,phone=?,address=? WHERE id=?",
+                    (request.form["name"],request.form["phone"],request.form["address"],session["user_id"]))
+        con.commit(); session["user_name"]=request.form["name"]; flash("회원정보가 수정되었습니다.")
+    u=con.execute("SELECT * FROM users WHERE id=?",(session["user_id"],)).fetchone()
+    orders=con.execute("SELECT * FROM orders WHERE user_id=? ORDER BY id DESC",(session["user_id"],)).fetchall()
+    con.close()
+    return render_template("mypage.html",u=u,orders=orders)
+
+@app.post("/password")
+@login_required
+def password():
+    con=db(); u=con.execute("SELECT * FROM users WHERE id=?",(session["user_id"],)).fetchone()
+    if not check_password_hash(u["password_hash"],request.form["current"]):
+        con.close(); flash("현재 비밀번호가 틀렸습니다."); return redirect(url_for("mypage"))
+    if len(request.form["new"])<6:
+        con.close(); flash("새 비밀번호는 6자 이상이어야 합니다."); return redirect(url_for("mypage"))
+    con.execute("UPDATE users SET password_hash=? WHERE id=?",(generate_password_hash(request.form["new"]),session["user_id"]))
+    con.commit(); con.close(); flash("비밀번호를 변경했습니다.")
+    return redirect(url_for("mypage"))
+
+@app.post("/withdraw")
+@login_required
+def withdraw():
+    con=db(); con.execute("UPDATE users SET status='탈퇴' WHERE id=?",(session["user_id"],)); con.commit(); con.close()
+    session.clear(); flash("회원 탈퇴 처리되었습니다."); return redirect(url_for("home"))
+
+@app.post("/api/orders")
+def create_order():
+    data=request.get_json(force=True); customer=data.get("customer",{}); cart=data.get("cart",[])
+    if not all([customer.get("name"),customer.get("phone"),customer.get("address")]) or not cart:
+        return jsonify({"error":"주문 정보를 확인해주세요."}),400
+    con=db()
+    try:
+        con.execute("BEGIN IMMEDIATE"); items=[]; total=0
+        for x in cart:
+            p=con.execute("SELECT * FROM products WHERE id=? AND active=1",(int(x["id"]),)).fetchone()
+            qty=int(x["qty"])
+            if not p or qty<1 or p["stock"]<qty: raise ValueError("상품 재고가 부족합니다.")
+            total += p["price"]*qty; items.append((p,qty))
+        cur=con.execute("""INSERT INTO orders(user_id,customer_name,phone,address,memo,total)
+                           VALUES(?,?,?,?,?,?)""",(session.get("user_id"),customer["name"],customer["phone"],
+                           customer["address"],customer.get("memo",""),total))
+        oid=cur.lastrowid
+        for p,qty in items:
+            con.execute("INSERT INTO order_items(order_id,product_id,product_name,price,qty) VALUES(?,?,?,?,?)",
+                        (oid,p["id"],p["name"],p["price"],qty))
+            con.execute("UPDATE products SET stock=stock-? WHERE id=?",(qty,p["id"]))
+        con.commit(); return jsonify({"ok":True,"order_id":oid})
+    except ValueError as e:
+        con.rollback(); return jsonify({"error":str(e)}),409
+    finally: con.close()
+
+@app.route("/admin/login",methods=["GET","POST"])
+def admin_login():
+    if request.method=="POST" and request.form["password"]==ADMIN_PASSWORD:
+        session["admin"]=True; return redirect(url_for("admin"))
+    return render_template("admin_login.html")
+
+@app.get("/admin/logout")
+def admin_logout(): session.pop("admin",None); return redirect(url_for("home"))
+
+@app.get("/admin")
+@admin_required
+def admin():
+    con=db()
+    products=con.execute("SELECT * FROM products ORDER BY id DESC").fetchall()
+    orders=con.execute("SELECT * FROM orders ORDER BY id DESC").fetchall()
+    users=con.execute("""SELECT u.*, COUNT(o.id) order_count, COALESCE(SUM(o.total),0) spent
+                         FROM users u LEFT JOIN orders o ON u.id=o.user_id
+                         GROUP BY u.id ORDER BY u.id DESC""").fetchall()
+    settings=con.execute("SELECT * FROM site_settings WHERE id=1").fetchone()
+    con.close()
+    return render_template("admin.html",products=products,orders=orders,users=users,settings=settings)
+
+@app.post("/admin/design")
+@admin_required
+def admin_design():
+    f=request.form
+    con=db()
+    con.execute("""UPDATE site_settings SET shop_name=?, hero_title=?, hero_text=?,
+                   accent_color=?, background_color=?, hero_start=?, hero_end=? WHERE id=1""",
+                (f["shop_name"], f["hero_title"], f["hero_text"], f["accent_color"],
+                 f["background_color"], f["hero_start"], f["hero_end"]))
+    con.commit()
+    con.close()
+    return redirect(url_for("admin"))
+
+@app.post("/admin/products")
+@admin_required
+def add_product():
+    f=request.form; con=db()
+    con.execute("INSERT INTO products(name,category,price,stock,emoji,description) VALUES(?,?,?,?,?,?)",
+                (f["name"],f["category"],int(f["price"]),int(f["stock"]),f.get("emoji","📦"),f.get("description","")))
+    con.commit(); con.close(); return redirect(url_for("admin"))
+
+@app.post("/admin/products/<int:pid>/stock")
+@admin_required
+def stock(pid):
+    con=db(); con.execute("UPDATE products SET stock=? WHERE id=?",(int(request.form["stock"]),pid)); con.commit(); con.close()
+    return redirect(url_for("admin"))
+
+@app.post("/admin/users/<int:uid>/status")
+@admin_required
+def user_status(uid):
+    con=db(); con.execute("UPDATE users SET status=? WHERE id=?",(request.form["status"],uid)); con.commit(); con.close()
+    return redirect(url_for("admin"))
+
+@app.post("/admin/orders/<int:oid>/status")
+@admin_required
+def order_status(oid):
+    con=db(); con.execute("UPDATE orders SET status=? WHERE id=?",(request.form["status"],oid)); con.commit(); con.close()
+    return redirect(url_for("admin"))
+
+if __name__=="__main__":
+    init_db()
+    app.run(host="0.0.0.0",port=5000,debug=False)
