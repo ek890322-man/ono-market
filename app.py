@@ -10,6 +10,8 @@ from werkzeug.utils import secure_filename
 import uuid
 import cloudinary
 import cloudinary.uploader
+from solapi import SolapiMessageService
+from solapi.model import RequestMessage
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-secret-change-me")
@@ -20,6 +22,10 @@ ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "change-me")
 CLOUDINARY_CLOUD_NAME=os.environ.get("CLOUDINARY_CLOUD_NAME")
 CLOUDINARY_API_KEY=os.environ.get("CLOUDINARY_API_KEY")
 CLOUDINARY_API_SECRET=os.environ.get("CLOUDINARY_API_SECRET")
+SOLAPI_API_KEY=os.environ.get("SOLAPI_API_KEY")
+SOLAPI_API_SECRET=os.environ.get("SOLAPI_API_SECRET")
+SOLAPI_SENDER_NUMBER=os.environ.get("SOLAPI_SENDER_NUMBER")
+ADMIN_PHONE=os.environ.get("ADMIN_PHONE")
 if CLOUDINARY_CLOUD_NAME and CLOUDINARY_API_KEY and CLOUDINARY_API_SECRET:
     cloudinary.config(
         cloud_name=CLOUDINARY_CLOUD_NAME,
@@ -29,6 +35,23 @@ if CLOUDINARY_CLOUD_NAME and CLOUDINARY_API_KEY and CLOUDINARY_API_SECRET:
     )
 
 ALLOWED_EXTENSIONS={"png","jpg","jpeg","webp","gif"}
+
+def normalize_phone(phone):
+    return "".join(ch for ch in (phone or "") if ch.isdigit())
+
+def send_sms(to, text):
+    """SOLAPI 설정이 있으면 SMS/LMS를 발송합니다. 문자 실패가 주문 자체를 막지는 않습니다."""
+    to=normalize_phone(to)
+    if not all([SOLAPI_API_KEY,SOLAPI_API_SECRET,SOLAPI_SENDER_NUMBER,to]):
+        return False
+    try:
+        service=SolapiMessageService(api_key=SOLAPI_API_KEY,api_secret=SOLAPI_API_SECRET)
+        message=RequestMessage(from_=normalize_phone(SOLAPI_SENDER_NUMBER),to=to,text=text)
+        service.send(message)
+        return True
+    except Exception as e:
+        app.logger.exception("SMS 발송 실패: %s",e)
+        return False
 
 def save_image(file):
     if not file or not file.filename:
@@ -338,7 +361,12 @@ def create_order():
             con.execute("INSERT INTO order_items(order_id,product_id,product_name,price,qty) VALUES(%s,%s,%s,%s,%s)",
                         (oid,p["id"],p["name"],p["price"],qty))
             con.execute("UPDATE products SET stock=stock-%s WHERE id=%s",(qty,p["id"]))
-        con.commit(); return jsonify({"ok":True,"order_id":oid})
+        con.commit()
+        customer_sms=f"[ONO MARKET] 주문 #{oid} 접수 완료. 결제금액 {total:,}원. 주문조회에서 진행상태를 확인해주세요."
+        send_sms(customer["phone"],customer_sms)
+        if ADMIN_PHONE:
+            send_sms(ADMIN_PHONE,f"[ONO MARKET] 새 주문 #{oid} / {customer['name']} / {total:,}원")
+        return jsonify({"ok":True,"order_id":oid})
     except ValueError as e:
         con.rollback(); return jsonify({"error":str(e)}),409
     finally: con.close()
@@ -483,7 +511,14 @@ def user_status(uid):
 @app.post("/admin/orders/<int:oid>/status")
 @admin_required
 def order_status(oid):
-    con=db(); con.execute("UPDATE orders SET status=%s WHERE id=%s",(request.form["status"],oid)); con.commit(); con.close()
+    status=request.form["status"]
+    con=db()
+    con.execute("UPDATE orders SET status=%s WHERE id=%s",(status,oid))
+    order=con.execute("SELECT phone FROM orders WHERE id=%s",(oid,)).fetchone()
+    con.commit()
+    con.close()
+    if order:
+        send_sms(order["phone"],f"[ONO MARKET] 주문 #{oid} 상태가 '{status}'(으)로 변경되었습니다.")
     return redirect(url_for("admin"))
 
 if __name__=="__main__":

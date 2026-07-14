@@ -27,3 +27,12 @@ services:
         sync: false
       - key: CLOUDINARY_API_SECRET
         sync: false
+
+      - key: SOLAPI_API_KEY
+        sync: false
+      - key: SOLAPI_API_SECRET
+        sync: false
+      - key: SOLAPI_SENDER_NUMBER
+        sync: false
+      - key: ADMIN_PHONE
+        sync: false
