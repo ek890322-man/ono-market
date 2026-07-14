@@ -98,6 +98,24 @@ def init_db():
       hero_end TEXT NOT NULL DEFAULT '#cbd5c0'
     )""")
     con.execute("INSERT OR IGNORE INTO site_settings(id) VALUES(1)")
+
+    product_cols={r["name"] for r in con.execute("PRAGMA table_info(products)").fetchall()}
+    if "main_image" not in product_cols:
+        con.execute("ALTER TABLE products ADD COLUMN main_image TEXT DEFAULT ''")
+    if "main_image_public_id" not in product_cols:
+        con.execute("ALTER TABLE products ADD COLUMN main_image_public_id TEXT DEFAULT ''")
+
+    con.execute("""CREATE TABLE IF NOT EXISTS product_images(
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      product_id INTEGER NOT NULL,
+      filename TEXT NOT NULL,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      public_id TEXT DEFAULT ''
+    )""")
+    image_cols={r["name"] for r in con.execute("PRAGMA table_info(product_images)").fetchall()}
+    if "public_id" not in image_cols:
+        con.execute("ALTER TABLE product_images ADD COLUMN public_id TEXT DEFAULT ''")
+
     if con.execute("SELECT COUNT(*) c FROM products").fetchone()["c"] == 0:
         seed=[
           ("데일리 머그 2P","리빙",18900,20,"☕","매일 쓰기 좋은 심플한 머그 세트"),
