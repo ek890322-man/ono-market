@@ -23,7 +23,10 @@
         <strong>{{"{:,}".format(item.price * item.qty)}}원</strong>
       </div>
       {% else %}<p>상품 정보가 없습니다.</p>{% endfor %}
-      <div class="member-order-total"><span>총 결제금액</span><b>{{"{:,}".format(o.total)}}원</b></div>
+      <div class="member-order-total"><span>상품금액</span><b>{{"{:,}".format(o.subtotal if o.subtotal else o.total + o.points_used)}}원</b></div>
+      <div class="member-order-total"><span>포인트 사용</span><b>-{{"{:,}".format(o.points_used)}}P</b></div>
+      <div class="member-order-total"><span>최종 결제금액</span><b>{{"{:,}".format(o.total)}}원</b></div>
+      <div class="member-point-info"><span>{% if o.points_awarded %}적립 완료{% else %}구매완료 시 적립 예정{% endif %}</span><b>{{"{:,}".format((o.total * 3 // 100))}}P</b></div>
     </div>
     <div class="member-delivery">
       <div><b>받는 분</b><span>{{o.customer_name}}</span></div>

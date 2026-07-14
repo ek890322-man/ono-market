@@ -1,6 +1,7 @@
 {% extends "base.html" %}{% block body %}
 <section class="hero"><h1>{{site.hero_title}}</h1><p>{{site.hero_text}}</p></section>
-<main><div class="shopbar"><input id="search" placeholder="상품 검색"><button onclick="openCart()">장바구니 <b id="count">0</b></button></div><div id="filters" class="filters"></div><div id="grid" class="grid"></div></main>
+<main><div class="shopbar"><input id="search" placeholder="상품 검색"></div><div id="filters" class="filters"></div><div id="grid" class="grid"></div></main>
+<button type="button" class="floating-cart-btn" onclick="openCart()" aria-label="장바구니 열기"><span class="floating-cart-icon">🛒</span><b id="count">0</b></button>
 <div id="shade" class="shade" onclick="closeCart()"></div><aside id="cartDrawer" class="drawer"><h2>장바구니</h2><div id="items" class="grow"></div><div class="carttotal"><span>결제 예정금액</span><b id="total">0원</b></div><button id="checkoutBtn" onclick="showOrder()">결제하기</button><button class="light" onclick="closeCart()">닫기</button></aside>
 <div id="loginOrderModal" class="modal">
 <div class="login-order-box">
@@ -10,5 +11,11 @@
 <a class="login-order-primary" href="/signup">회원가입하고 주문하기</a>
 <a class="login-order-secondary" href="/login">이미 회원이에요 · 로그인</a>
 <button type="button" class="login-order-cancel" onclick="loginOrderModal.style.display='none'">계속 쇼핑하기</button>
-</div></div><div id="modal" class="modal"><form id="orderForm" class="checkoutform"><h2>주문 / 결제</h2><section class="ordersummary"><h3>주문 상품</h3><div id="orderSummary"></div><div class="paytotal"><span>최종 결제금액</span><b id="payTotal">0원</b></div></section><h3>배송 정보</h3><input name="name" value="{{session.user_name or ''}}" placeholder="주문자명" required><input name="phone" placeholder="연락처" required><input name="address" placeholder="배송 주소" required><textarea name="memo" placeholder="배송 메모"></textarea><h3>결제수단</h3><div class="paymethods"><label><input type="radio" name="payment_method" value="카드결제" checked> 카드결제</label><label><input type="radio" name="payment_method" value="계좌이체"> 계좌이체</label><label><input type="radio" name="payment_method" value="무통장입금"> 무통장입금</label></div><p class="paynotice">현재는 실제 PG 카드승인 전 주문·결제 화면 테스트 단계입니다.</p><button>결제 및 주문 접수</button><button type="button" class="light" onclick="modal.style.display='none'">취소</button></form></div>
-<script>window.PRODUCTS={{products_json|tojson}};const ONO_LOGGED_IN={{ 'true' if session.get('user_id') else 'false' }};</script><script src="{{url_for('static',filename='shop.js')}}"></script>{% endblock %}
+</div></div><div id="modal" class="modal"><form id="orderForm" class="checkoutform"><h2>주문 / 결제</h2><section class="ordersummary"><h3>주문 상품</h3><div id="orderSummary"></div>
+<div class="point-payment">
+  <div class="point-payment-head"><b>포인트 사용</b><span>보유 <strong id="availablePoints">{{"{:,}".format(current_user.points if current_user else 0)}}P</strong></span></div>
+  <div class="point-use-row"><input id="pointsUsed" type="number" min="0" value="0" placeholder="사용할 포인트"><button type="button" class="light" onclick="useAllPoints()">전액 사용</button></div>
+</div>
+<div class="pay-breakdown"><div><span>상품금액</span><b id="orderSubtotal">0원</b></div><div><span>포인트 사용</span><b id="pointDiscount">-0P</b></div></div>
+<div class="paytotal"><span>최종 결제금액</span><b id="payTotal">0원</b></div></section><h3>배송 정보</h3><input name="name" value="{{current_user.name if current_user else ''}}" placeholder="주문자명" required><input name="phone" value="{{current_user.phone if current_user else ''}}" placeholder="연락처" required><input name="address" value="{{current_user.address if current_user else ''}}" placeholder="배송 주소" required><textarea name="memo" placeholder="배송 메모"></textarea><h3>결제수단</h3><div class="paymethods"><label><input type="radio" name="payment_method" value="카드결제" checked> 카드결제</label><label><input type="radio" name="payment_method" value="계좌이체"> 계좌이체</label><label><input type="radio" name="payment_method" value="무통장입금"> 무통장입금</label></div><p class="paynotice">현재는 실제 PG 카드승인 전 주문·결제 화면 테스트 단계입니다.</p><button>결제 및 주문 접수</button><button type="button" class="light" onclick="modal.style.display='none'">취소</button></form></div>
+<script>window.PRODUCTS={{products_json|tojson}};const ONO_LOGGED_IN={{ 'true' if session.get('user_id') else 'false' }};const ONO_USER_POINTS={{ current_user.points if current_user else 0 }};</script><script src="{{url_for('static',filename='shop.js')}}"></script>{% endblock %}

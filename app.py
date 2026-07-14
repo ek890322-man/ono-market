@@ -94,6 +94,17 @@ def init_db():
           created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
         )
         """)
+        cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS points INTEGER NOT NULL DEFAULT 0")
+        cur.execute("""
+        CREATE TABLE IF NOT EXISTS points_history(
+          id BIGSERIAL PRIMARY KEY,
+          user_id BIGINT NOT NULL,
+          order_id BIGINT,
+          amount INTEGER NOT NULL,
+          description TEXT NOT NULL,
+          created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+        )
+        """)
         cur.execute("""
         CREATE TABLE IF NOT EXISTS products(
           id BIGSERIAL PRIMARY KEY,
@@ -121,6 +132,9 @@ def init_db():
           created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
         )
         """)
+        cur.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS points_awarded INTEGER NOT NULL DEFAULT 0")
+        cur.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS points_used INTEGER NOT NULL DEFAULT 0")
+        cur.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS subtotal INTEGER NOT NULL DEFAULT 0")
         cur.execute("""
         CREATE TABLE IF NOT EXISTS order_items(
           id BIGSERIAL PRIMARY KEY,
@@ -206,8 +220,20 @@ def inject_site():
 
 @app.get("/")
 def home():
-    con=db(); products=con.execute("SELECT * FROM products WHERE active=1 ORDER BY id DESC").fetchall(); con.close()
-    return render_template("index.html", products=products, products_json=[dict(p) for p in products])
+    con=db()
+    products=con.execute("SELECT * FROM products WHERE active=1 ORDER BY id DESC").fetchall()
+    current_user=None
+    if session.get("user_id"):
+        current_user=con.execute("SELECT * FROM users WHERE id=%s",(session["user_id"],)).fetchone()
+    con.close()
+    return render_template("index.html", products=products, products_json=[dict(p) for p in products], current_user=current_user)
+
+@app.get("/cart")
+def cart_page():
+    con=db()
+    products=con.execute("SELECT * FROM products WHERE active=1 ORDER BY id DESC").fetchall()
+    con.close()
+    return render_template("cart.html",products_json=[dict(p) for p in products])
 
 @app.route("/product/<int:product_id>")
 def product_detail(product_id):
@@ -315,8 +341,9 @@ def mypage():
                     (request.form["name"],request.form["phone"],request.form["address"],session["user_id"]))
         con.commit(); session["user_name"]=request.form["name"]; flash("회원정보가 수정되었습니다.")
     u=con.execute("SELECT * FROM users WHERE id=%s",(session["user_id"],)).fetchone()
+    points_history=con.execute("SELECT * FROM points_history WHERE user_id=%s ORDER BY id DESC LIMIT 50",(session["user_id"],)).fetchall()
     con.close()
-    return render_template("mypage.html",u=u)
+    return render_template("mypage.html",u=u,points_history=points_history)
 
 @app.get("/orders")
 @login_required
@@ -352,35 +379,67 @@ def withdraw():
     session.clear(); flash("회원 탈퇴 처리되었습니다."); return redirect(url_for("home"))
 
 @app.post("/api/orders")
+@login_required
 def create_order():
-    data=request.get_json(force=True); customer=data.get("customer",{}); cart=data.get("cart",[])
+    data=request.get_json(force=True)
+    customer=data.get("customer",{})
+    cart=data.get("cart",[])
+    try:
+        requested_points=max(0,int(data.get("points_used",0) or 0))
+    except (TypeError,ValueError):
+        return jsonify({"error":"포인트 사용 금액을 확인해주세요."}),400
+
     if not all([customer.get("name"),customer.get("phone"),customer.get("address")]) or not cart:
         return jsonify({"error":"주문 정보를 확인해주세요."}),400
+
     con=db()
     try:
-        items=[]; total=0
+        items=[]
+        subtotal=0
         for x in cart:
             p=con.execute("SELECT * FROM products WHERE id=%s AND active=1 FOR UPDATE",(int(x["id"]),)).fetchone()
             qty=int(x["qty"])
-            if not p or qty<1 or p["stock"]<qty: raise ValueError("상품 재고가 부족합니다.")
-            total += p["price"]*qty; items.append((p,qty))
-        cur=con.execute("""INSERT INTO orders(user_id,customer_name,phone,address,memo,total)
-                           VALUES(%s,%s,%s,%s,%s,%s) RETURNING id""",(session.get("user_id"),customer["name"],customer["phone"],
-                           customer["address"],customer.get("memo",""),total))
+            if not p or qty<1 or p["stock"]<qty:
+                raise ValueError("상품 재고가 부족합니다.")
+            subtotal += p["price"]*qty
+            items.append((p,qty))
+
+        user=con.execute("SELECT points FROM users WHERE id=%s FOR UPDATE",(session["user_id"],)).fetchone()
+        available_points=user["points"] if user else 0
+        points_used=min(requested_points,available_points,subtotal)
+        total=subtotal-points_used
+
+        cur=con.execute("""INSERT INTO orders(user_id,customer_name,phone,address,memo,total,subtotal,points_used)
+                           VALUES(%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
+                        (session["user_id"],customer["name"],customer["phone"],customer["address"],
+                         customer.get("memo",""),total,subtotal,points_used))
         oid=cur.fetchone()["id"]
+
+        if points_used>0:
+            con.execute("UPDATE users SET points=points-%s WHERE id=%s",(points_used,session["user_id"]))
+            con.execute("""INSERT INTO points_history(user_id,order_id,amount,description)
+                           VALUES(%s,%s,%s,%s)""",
+                        (session["user_id"],oid,-points_used,f"주문 #{oid} 결제 포인트 사용"))
+
         for p,qty in items:
             con.execute("INSERT INTO order_items(order_id,product_id,product_name,price,qty) VALUES(%s,%s,%s,%s,%s)",
                         (oid,p["id"],p["name"],p["price"],qty))
             con.execute("UPDATE products SET stock=stock-%s WHERE id=%s",(qty,p["id"]))
+
         con.commit()
-        customer_sms=f"[ONO MARKET] 주문 #{oid} 접수 완료. 결제금액 {total:,}원. 주문조회에서 진행상태를 확인해주세요."
+        customer_sms=f"[ONO MARKET] 주문 #{oid} 접수 완료. 결제금액 {total:,}원"
+        if points_used:
+            customer_sms+=f" / 포인트 {points_used:,}P 사용"
+        customer_sms+=". 주문조회에서 진행상태를 확인해주세요."
         send_sms(customer["phone"],customer_sms)
         if ADMIN_PHONE:
-            send_sms(ADMIN_PHONE,f"[ONO MARKET] 새 주문 #{oid} / {customer['name']} / {total:,}원")
-        return jsonify({"ok":True,"order_id":oid})
+            send_sms(ADMIN_PHONE,f"[ONO MARKET] 새 주문 #{oid} / {customer['name']} / 결제 {total:,}원 / 포인트 {points_used:,}P")
+        return jsonify({"ok":True,"order_id":oid,"total":total,"points_used":points_used})
     except ValueError as e:
-        con.rollback(); return jsonify({"error":str(e)}),409
-    finally: con.close()
+        con.rollback()
+        return jsonify({"error":str(e)}),409
+    finally:
+        con.close()
 
 @app.route("/admin/login",methods=["GET","POST"])
 def admin_login():
@@ -538,12 +597,29 @@ def user_status(uid):
 def order_status(oid):
     status=request.form["status"]
     con=db()
+    order=con.execute("SELECT * FROM orders WHERE id=%s FOR UPDATE",(oid,)).fetchone()
+    if not order:
+        con.close()
+        abort(404)
+
     con.execute("UPDATE orders SET status=%s WHERE id=%s",(status,oid))
-    order=con.execute("SELECT phone FROM orders WHERE id=%s",(oid,)).fetchone()
+    awarded_points=0
+
+    if status=="완료" and order["user_id"] and not order["points_awarded"]:
+        awarded_points=int(order["total"] * 3 // 100)
+        if awarded_points > 0:
+            con.execute("UPDATE users SET points=points+%s WHERE id=%s",(awarded_points,order["user_id"]))
+            con.execute("""INSERT INTO points_history(user_id,order_id,amount,description)
+                           VALUES(%s,%s,%s,%s)""",
+                        (order["user_id"],oid,awarded_points,f"주문 #{oid} 구매금액 3% 적립"))
+        con.execute("UPDATE orders SET points_awarded=1 WHERE id=%s",(oid,))
+
     con.commit()
     con.close()
-    if order:
-        send_sms(order["phone"],f"[ONO MARKET] 주문 #{oid} 상태가 '{status}'(으)로 변경되었습니다.")
+
+    send_sms(order["phone"],f"[ONO MARKET] 주문 #{oid} 상태가 '{status}'(으)로 변경되었습니다.")
+    if awarded_points > 0:
+        send_sms(order["phone"],f"[ONO MARKET] 주문 #{oid} 구매 적립금 {awarded_points:,}P가 적립되었습니다.")
     return redirect(url_for("admin"))
 
 if __name__=="__main__":

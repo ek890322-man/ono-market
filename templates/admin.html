@@ -41,7 +41,9 @@ document.addEventListener("DOMContentLoaded",()=>{const f=document.getElementByI
         <strong>{{"{:,}".format(item.price * item.qty)}}원</strong>
       </div>
       {% else %}<p>주문 상품 정보 없음</p>{% endfor %}
-      <div class="admin-order-total"><span>총 주문금액</span><b>{{"{:,}".format(o.total)}}원</b></div>
+      <div class="admin-order-total"><span>상품금액</span><b>{{"{:,}".format(o.subtotal if o.subtotal else o.total + o.points_used)}}원</b></div>
+      <div class="admin-order-total"><span>포인트 사용</span><b>-{{"{:,}".format(o.points_used)}}P</b></div>
+      <div class="admin-order-total"><span>최종 결제금액</span><b>{{"{:,}".format(o.total)}}원</b></div>
     </div>
     <form class="order-status-form" method="post" action="/admin/orders/{{o.id}}/status">
       <label>주문 상태
