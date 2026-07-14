@@ -3,6 +3,10 @@ from flask import Flask, render_template, request, redirect, url_for, session, j
 import sqlite3, os
 from functools import wraps
 from werkzeug.security import generate_password_hash, check_password_hash
+from werkzeug.utils import secure_filename
+import uuid
+import cloudinary
+import cloudinary.uploader
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-secret-change-me")
@@ -10,6 +14,41 @@ DATA_DIR = os.environ.get("DATA_DIR", os.path.dirname(os.path.abspath(__file__))
 os.makedirs(DATA_DIR, exist_ok=True)
 DB = os.path.join(DATA_DIR, "shop.db")
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "change-me")
+CLOUDINARY_CLOUD_NAME=os.environ.get("CLOUDINARY_CLOUD_NAME")
+CLOUDINARY_API_KEY=os.environ.get("CLOUDINARY_API_KEY")
+CLOUDINARY_API_SECRET=os.environ.get("CLOUDINARY_API_SECRET")
+if CLOUDINARY_CLOUD_NAME and CLOUDINARY_API_KEY and CLOUDINARY_API_SECRET:
+    cloudinary.config(
+        cloud_name=CLOUDINARY_CLOUD_NAME,
+        api_key=CLOUDINARY_API_KEY,
+        api_secret=CLOUDINARY_API_SECRET,
+        secure=True
+    )
+
+ALLOWED_EXTENSIONS={"png","jpg","jpeg","webp","gif"}
+
+def save_image(file):
+    if not file or not file.filename:
+        return None, None
+    ext=file.filename.rsplit(".",1)[-1].lower() if "." in file.filename else ""
+    if ext not in ALLOWED_EXTENSIONS:
+        raise ValueError("지원하지 않는 이미지 형식입니다.")
+    if not (CLOUDINARY_CLOUD_NAME and CLOUDINARY_API_KEY and CLOUDINARY_API_SECRET):
+        raise ValueError("Cloudinary 환경변수가 설정되지 않았습니다.")
+    result=cloudinary.uploader.upload(
+        file,
+        folder="ono-market/products",
+        resource_type="image"
+    )
+    return result["secure_url"], result["public_id"]
+
+def delete_cloud_image(public_id):
+    if not public_id:
+        return
+    try:
+        cloudinary.uploader.destroy(public_id, resource_type="image")
+    except Exception:
+        pass
 
 def db():
     con = sqlite3.connect(DB)
@@ -216,8 +255,11 @@ def admin():
                          FROM users u LEFT JOIN orders o ON u.id=o.user_id
                          GROUP BY u.id ORDER BY u.id DESC""").fetchall()
     settings=con.execute("SELECT * FROM site_settings WHERE id=1").fetchone()
+    all_images=con.execute("SELECT * FROM product_images ORDER BY product_id,sort_order,id").fetchall()
+    images_by_product={}
+    for image in all_images: images_by_product.setdefault(image["product_id"],[]).append(image)
     con.close()
-    return render_template("admin.html",products=products,orders=orders,users=users,settings=settings)
+    return render_template("admin.html",products=products,orders=orders,users=users,settings=settings,images_by_product=images_by_product)
 
 @app.post("/admin/design")
 @admin_required
@@ -235,10 +277,65 @@ def admin_design():
 @app.post("/admin/products")
 @admin_required
 def add_product():
-    f=request.form; con=db()
-    con.execute("INSERT INTO products(name,category,price,stock,emoji,description) VALUES(?,?,?,?,?,?)",
-                (f["name"],f["category"],int(f["price"]),int(f["stock"]),f.get("emoji","📦"),f.get("description","")))
-    con.commit(); con.close(); return redirect(url_for("admin"))
+    f=request.form
+    con=None
+    try:
+        main_image,main_public_id=save_image(request.files.get("main_image"))
+        main_image=main_image or ""
+        main_public_id=main_public_id or ""
+        con=db()
+        cur=con.execute("""INSERT INTO products(name,category,price,stock,emoji,description,main_image,main_image_public_id)
+        VALUES(?,?,?,?,?,?,?,?)""",(f["name"],f["category"],int(f["price"]),int(f["stock"]),f.get("emoji","📦"),f.get("description",""),main_image,main_public_id))
+        pid=cur.lastrowid
+        for order,file in enumerate(request.files.getlist("detail_images")):
+            image_url,public_id=save_image(file)
+            if image_url:
+                con.execute("INSERT INTO product_images(product_id,filename,sort_order,public_id) VALUES(?,?,?,?)",(pid,image_url,order,public_id or ""))
+        con.commit()
+    except (ValueError, Exception) as e:
+        if con: con.rollback()
+        flash("이미지/상품 저장 오류: "+str(e))
+    finally:
+        if con: con.close()
+    return redirect(url_for("admin"))
+
+@app.post("/admin/products/<int:pid>/edit")
+@admin_required
+def edit_product(pid):
+    f=request.form
+    con=db()
+    p=con.execute("SELECT * FROM products WHERE id=?",(pid,)).fetchone()
+    if not p:
+        con.close()
+        abort(404)
+    try:
+        new_url,new_public_id=save_image(request.files.get("main_image"))
+        main_image=new_url or p["main_image"]
+        main_public_id=new_public_id or p["main_image_public_id"]
+        con.execute("""UPDATE products SET name=?,category=?,price=?,stock=?,emoji=?,description=?,main_image=?,main_image_public_id=? WHERE id=?""",
+        (f["name"],f["category"],int(f["price"]),int(f["stock"]),f.get("emoji","📦"),f.get("description",""),main_image,main_public_id,pid))
+        if new_url:
+            delete_cloud_image(p["main_image_public_id"])
+        for order,file in enumerate(request.files.getlist("detail_images")):
+            image_url,public_id=save_image(file)
+            if image_url:
+                con.execute("INSERT INTO product_images(product_id,filename,sort_order,public_id) VALUES(?,?,?,?)",(pid,image_url,order+100,public_id or ""))
+        con.commit()
+    except Exception as e:
+        con.rollback()
+        flash("상품 수정 오류: "+str(e))
+    finally:
+        con.close()
+    return redirect(url_for("admin"))
+
+@app.post("/admin/product-images/<int:image_id>/delete")
+@admin_required
+def delete_product_image(image_id):
+    con=db(); image=con.execute("SELECT * FROM product_images WHERE id=?",(image_id,)).fetchone()
+    if image:
+        con.execute("DELETE FROM product_images WHERE id=?",(image_id,)); con.commit()
+        delete_cloud_image(image["public_id"])
+    con.close(); return redirect(url_for("admin"))
 
 @app.post("/admin/products/<int:pid>/stock")
 @admin_required
