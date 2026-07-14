@@ -2,7 +2,7 @@
 <section class="hero"><h1>{{site.hero_title}}</h1><p>{{site.hero_text}}</p></section>
 <main><div class="shopbar"><input id="search" placeholder="상품 검색"></div><div id="filters" class="filters"></div><div id="grid" class="grid"></div></main>
 <button type="button" class="floating-cart-btn" onclick="openCart()" aria-label="장바구니 열기"><span class="floating-cart-icon">🛒</span><b id="count">0</b></button>
-<div id="shade" class="shade" onclick="closeCart()"></div><aside id="cartDrawer" class="drawer"><h2>장바구니</h2><div id="items" class="grow"></div><div class="carttotal"><span>결제 예정금액</span><b id="total">0원</b></div><button id="checkoutBtn" onclick="showOrder()">결제하기</button><button class="light" onclick="closeCart()">닫기</button></aside>
+<div id="shade" class="shade" onclick="closeCart()"></div><aside id="cartDrawer" class="drawer"><h2>장바구니</h2><div id="items" class="grow"></div><div class="carttotal"><span>결제 예정금액</span><b id="total">0원</b></div><button id="checkoutBtn" onclick="showOrder()">결제하기</button><button class="light drawer-clear-btn" onclick="clearDrawerCart()">장바구니 초기화</button><button class="light" onclick="closeCart()">닫기</button></aside>
 <div id="loginOrderModal" class="modal">
 <div class="login-order-box">
 <button type="button" class="login-order-x" onclick="loginOrderModal.style.display='none'">✕</button>

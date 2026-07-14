@@ -10,6 +10,12 @@ function changeQty(id,d){
   saveCart();
 }
 function deleteCartItem(id){delete basket[id];saveCart()}
+function clearCart(){
+  if(!Object.keys(basket).length)return alert("장바구니가 이미 비어 있어요.");
+  if(!confirm("장바구니에 담긴 상품을 모두 삭제할까요?"))return;
+  basket={};
+  saveCart();
+}
 function renderCartPage(){
   let rows=[],sum=0,count=0;
   for(const [id,q] of Object.entries(basket)){
