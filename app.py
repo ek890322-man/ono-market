@@ -174,6 +174,24 @@ def home():
     con=db(); products=con.execute("SELECT * FROM products WHERE active=1 ORDER BY id DESC").fetchall(); con.close()
     return render_template("index.html", products=products, products_json=[dict(p) for p in products])
 
+@app.route("/product/<int:product_id>")
+def product_detail(product_id):
+    con = db()
+    product = con.execute(
+        "SELECT * FROM products WHERE id=%s AND active=1",
+        (product_id,)
+    ).fetchone()
+    if not product:
+        con.close()
+        abort(404)
+
+    images = con.execute(
+        "SELECT * FROM product_images WHERE product_id=%s ORDER BY sort_order,id",
+        (product_id,)
+    ).fetchall()
+    con.close()
+    return render_template("product.html", product=product, images=images)
+
 @app.route("/signup", methods=["GET","POST"])
 def signup():
     if request.method=="POST":
