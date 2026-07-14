@@ -85,3 +85,8 @@
 .qna-status{font-size:12px;background:#f3f4f6;padding:7px 10px;border-radius:999px}.qna-status.answered{background:#111827;color:#fff}.qna-content{padding:0 4px 18px}.question-body,.answer-body{padding:16px;border-radius:12px}.question-body{background:#f8fafc}.answer-body{margin-top:8px;background:#eef2ff}.question-body p,.answer-body p{white-space:pre-wrap;margin:8px 0}.answer-body small{color:#6b7280}
 .admin-question{border:1px solid #e5e7eb;border-radius:12px;margin:10px 0}.admin-question summary{display:grid;grid-template-columns:1fr 2fr auto;gap:14px;padding:15px;cursor:pointer;list-style:none}.admin-question summary small{display:block;color:#6b7280;margin-top:5px}.admin-question-body{padding:15px;border-top:1px solid #eee}.admin-question-text{background:#f8fafc;padding:14px;border-radius:10px;margin-bottom:12px}.admin-question-body textarea{width:100%;box-sizing:border-box;margin-top:7px;padding:12px;border:1px solid #d1d5db;border-radius:10px;font:inherit}
 @media(max-width:700px){.qna-form{flex-direction:column}.qna-form button{width:100%}.admin-question summary{grid-template-columns:1fr}.qna-item summary{align-items:start}}
+
+.admin-main-image{display:flex;flex-direction:column;align-items:flex-start;gap:9px}
+.admin-image-item{display:flex;flex-direction:column;gap:7px}
+.image-delete-btn{width:100%;font-size:13px;padding:9px 10px}
+.admin-main-image .image-delete-btn{max-width:220px}

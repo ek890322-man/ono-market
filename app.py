@@ -239,7 +239,7 @@ def add_product_question(product_id):
         flash("문의 내용을 입력해주세요.")
         return redirect(url_for("product_detail",product_id=product_id)+"#product-qna")
     con=db()
-    product=con.execute("SELECT id FROM products WHERE id=%s AND active=1",(product_id,)).fetchone()
+    product=con.execute("SELECT id,name FROM products WHERE id=%s AND active=1",(product_id,)).fetchone()
     if not product:
         con.close()
         abort(404)
@@ -248,6 +248,17 @@ def add_product_question(product_id):
                 (product_id,session["user_id"],session.get("user_name","회원"),question))
     con.commit()
     con.close()
+
+    if ADMIN_PHONE:
+        product_name=product.get("name","상품") if hasattr(product,"get") else "상품"
+        preview=question.replace("\n"," ").strip()
+        if len(preview)>50:
+            preview=preview[:50]+"..."
+        send_sms(
+            ADMIN_PHONE,
+            f"[ONO MARKET] 새 상품 문의 / 상품: {product_name} / 문의자: {session.get('user_name','회원')} / {preview}"
+        )
+
     flash("상품 문의가 등록되었습니다.")
     return redirect(url_for("product_detail",product_id=product_id)+"#product-qna")
 
@@ -487,6 +498,19 @@ def edit_product(pid):
         con.close()
     return redirect(url_for("admin"))
 
+@app.post("/admin/products/<int:pid>/main-image/delete")
+@admin_required
+def delete_main_product_image(pid):
+    con=db()
+    product=con.execute("SELECT main_image_public_id FROM products WHERE id=%s",(pid,)).fetchone()
+    if product:
+        con.execute("UPDATE products SET main_image='', main_image_public_id='' WHERE id=%s",(pid,))
+        con.commit()
+        delete_cloud_image(product["main_image_public_id"])
+        flash("대표 이미지가 삭제되었습니다.")
+    con.close()
+    return redirect(url_for("admin"))
+
 @app.post("/admin/product-images/<int:image_id>/delete")
 @admin_required
 def delete_product_image(image_id):
@@ -494,6 +518,7 @@ def delete_product_image(image_id):
     if image:
         con.execute("DELETE FROM product_images WHERE id=%s",(image_id,)); con.commit()
         delete_cloud_image(image["public_id"])
+        flash("상세 이미지가 삭제되었습니다.")
     con.close(); return redirect(url_for("admin"))
 
 @app.post("/admin/products/<int:pid>/stock")
