@@ -128,8 +128,12 @@ def init_db():
         con.executemany("INSERT INTO products(name,category,price,stock,emoji,description) VALUES(?,?,?,?,?,?)",seed)
     con.commit(); con.close()
 
+# 서버 프로세스 시작 시 DB 스키마를 먼저 보정합니다.
+init_db()
+
 @app.before_request
-def setup(): init_db()
+def setup():
+    init_db()
 
 def login_required(f):
     @wraps(f)
@@ -266,6 +270,7 @@ def admin_logout(): session.pop("admin",None); return redirect(url_for("home"))
 @app.get("/admin")
 @admin_required
 def admin():
+    init_db()
     con=db()
     products=con.execute("SELECT * FROM products ORDER BY id DESC").fetchall()
     orders=con.execute("SELECT * FROM orders ORDER BY id DESC").fetchall()
