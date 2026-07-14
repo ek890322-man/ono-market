@@ -1,0 +1,40 @@
+{% extends "base.html" %}{% block body %}
+<main class="orders-page">
+<div class="orders-page-head"><div><h1>주문조회</h1><p>주문 내역과 배송 진행 상태를 확인할 수 있어요.</p></div><a href="/">쇼핑 계속하기</a></div>
+<section class="panel orders-only-panel">
+{% for o in orders %}
+<details class="member-order">
+  <summary>
+    <span><b>주문 #{{o.id}}</b><small>{{o.created_at}}</small></span>
+    <b>{{"{:,}".format(o.total)}}원</b>
+    <span class="member-order-status">{{o.status}}</span>
+    <span class="member-detail-label">주문 상세보기</span>
+  </summary>
+  <div class="member-order-body">
+    <div class="member-status-flow">
+      {% set steps=['주문접수','결제확인','배송준비','배송중','완료'] %}
+      {% for step in steps %}<span class="{% if o.status==step %}current{% endif %}">{{step}}</span>{% endfor %}
+    </div>
+    <div class="member-order-items">
+      <h3>주문 상품</h3>
+      {% for item in items_by_order.get(o.id,[]) %}
+      <div class="member-order-item">
+        <span><b>{{item.product_name}}</b><small>{{"{:,}".format(item.price)}}원 × {{item.qty}}개</small></span>
+        <strong>{{"{:,}".format(item.price * item.qty)}}원</strong>
+      </div>
+      {% else %}<p>상품 정보가 없습니다.</p>{% endfor %}
+      <div class="member-order-total"><span>총 결제금액</span><b>{{"{:,}".format(o.total)}}원</b></div>
+    </div>
+    <div class="member-delivery">
+      <div><b>받는 분</b><span>{{o.customer_name}}</span></div>
+      <div><b>연락처</b><span>{{o.phone}}</span></div>
+      <div><b>배송지</b><span>{{o.address}}</span></div>
+      <div><b>배송메모 / 결제수단</b><span>{{o.memo or '없음'}}</span></div>
+    </div>
+  </div>
+</details>
+{% else %}
+<div class="empty-orders"><h2>아직 주문내역이 없어요</h2><p>ONO MARKET의 상품을 둘러보세요.</p><a href="/">상품 보러가기</a></div>
+{% endfor %}
+</section>
+</main>{% endblock %}

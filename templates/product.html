@@ -42,6 +42,38 @@
     {% endfor %}
   </section>
   {% endif %}
+
+
+  <section class="product-qna" id="product-qna">
+    <div class="qna-title"><div><h2>상품 문의</h2><p>상품에 대해 궁금한 점을 남겨주세요.</p></div><span>문의 {{ questions|length }}건</span></div>
+
+    {% if session.user_id %}
+    <form method="post" action="/product/{{product.id}}/questions" class="qna-form">
+      <textarea name="question" rows="4" maxlength="1000" placeholder="상품 문의 내용을 입력해주세요." required></textarea>
+      <button type="submit">문의 등록</button>
+    </form>
+    {% else %}
+    <div class="qna-login-guide">문의글 작성은 로그인이 필요합니다. <a href="/login">로그인하기</a></div>
+    {% endif %}
+
+    <div class="qna-list">
+    {% for q in questions %}
+      <details class="qna-item">
+        <summary>
+          <span><b>Q. {{q.question}}</b><small>{{q.user_name[:1]}}** · {{q.created_at}}</small></span>
+          <span class="qna-status {% if q.answer %}answered{% endif %}">{% if q.answer %}답변완료{% else %}답변대기{% endif %}</span>
+        </summary>
+        <div class="qna-content">
+          <div class="question-body"><b>문의</b><p>{{q.question}}</p></div>
+          {% if q.answer %}<div class="answer-body"><b>ONO MARKET 답변</b><p>{{q.answer}}</p><small>{{q.answered_at}}</small></div>{% endif %}
+        </div>
+      </details>
+    {% else %}
+      <div class="qna-empty">등록된 상품 문의가 없습니다.</div>
+    {% endfor %}
+    </div>
+  </section>
+
 </main>
 
 <script>

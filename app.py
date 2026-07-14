@@ -118,6 +118,18 @@ def init_db():
         )
         """)
         cur.execute("""
+        CREATE TABLE IF NOT EXISTS product_questions(
+          id BIGSERIAL PRIMARY KEY,
+          product_id BIGINT NOT NULL,
+          user_id BIGINT NOT NULL,
+          user_name TEXT NOT NULL,
+          question TEXT NOT NULL,
+          answer TEXT DEFAULT '',
+          created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+          answered_at TIMESTAMPTZ
+        )
+        """)
+        cur.execute("""
         CREATE TABLE IF NOT EXISTS site_settings(
           id INTEGER PRIMARY KEY,
           shop_name TEXT NOT NULL DEFAULT 'ONO MARKET',
@@ -189,8 +201,32 @@ def product_detail(product_id):
         "SELECT * FROM product_images WHERE product_id=%s ORDER BY sort_order,id",
         (product_id,)
     ).fetchall()
+    questions = con.execute(
+        "SELECT * FROM product_questions WHERE product_id=%s ORDER BY id DESC",
+        (product_id,)
+    ).fetchall()
     con.close()
-    return render_template("product.html", product=product, images=images)
+    return render_template("product.html", product=product, images=images, questions=questions)
+
+@app.post("/product/<int:product_id>/questions")
+@login_required
+def add_product_question(product_id):
+    question=request.form.get("question","").strip()
+    if not question:
+        flash("문의 내용을 입력해주세요.")
+        return redirect(url_for("product_detail",product_id=product_id)+"#product-qna")
+    con=db()
+    product=con.execute("SELECT id FROM products WHERE id=%s AND active=1",(product_id,)).fetchone()
+    if not product:
+        con.close()
+        abort(404)
+    con.execute("""INSERT INTO product_questions(product_id,user_id,user_name,question)
+                   VALUES(%s,%s,%s,%s)""",
+                (product_id,session["user_id"],session.get("user_name","회원"),question))
+    con.commit()
+    con.close()
+    flash("상품 문의가 등록되었습니다.")
+    return redirect(url_for("product_detail",product_id=product_id)+"#product-qna")
 
 @app.route("/signup", methods=["GET","POST"])
 def signup():
@@ -245,9 +281,23 @@ def mypage():
                     (request.form["name"],request.form["phone"],request.form["address"],session["user_id"]))
         con.commit(); session["user_name"]=request.form["name"]; flash("회원정보가 수정되었습니다.")
     u=con.execute("SELECT * FROM users WHERE id=%s",(session["user_id"],)).fetchone()
-    orders=con.execute("SELECT * FROM orders WHERE user_id=%s ORDER BY id DESC",(session["user_id"],)).fetchall()
     con.close()
-    return render_template("mypage.html",u=u,orders=orders)
+    return render_template("mypage.html",u=u)
+
+@app.get("/orders")
+@login_required
+def orders():
+    con=db()
+    orders=con.execute("SELECT * FROM orders WHERE user_id=%s ORDER BY id DESC",(session["user_id"],)).fetchall()
+    order_ids=[o["id"] for o in orders]
+    items_by_order={}
+    if order_ids:
+        placeholders=",".join(["%s"]*len(order_ids))
+        order_items=con.execute(f"SELECT * FROM order_items WHERE order_id IN ({placeholders}) ORDER BY order_id,id",order_ids).fetchall()
+        for item in order_items:
+            items_by_order.setdefault(item["order_id"],[]).append(item)
+    con.close()
+    return render_template("orders.html",orders=orders,items_by_order=items_by_order)
 
 @app.post("/password")
 @login_required
@@ -314,10 +364,33 @@ def admin():
                          GROUP BY u.id ORDER BY u.id DESC""").fetchall()
     settings=con.execute("SELECT * FROM site_settings WHERE id=1").fetchone()
     all_images=con.execute("SELECT * FROM product_images ORDER BY product_id,sort_order,id").fetchall()
+    order_items=con.execute("SELECT * FROM order_items ORDER BY order_id,id").fetchall()
+    questions=con.execute("""SELECT q.*, p.name AS product_name
+                             FROM product_questions q
+                             JOIN products p ON p.id=q.product_id
+                             ORDER BY q.id DESC""").fetchall()
     images_by_product={}
+    items_by_order={}
     for image in all_images: images_by_product.setdefault(image["product_id"],[]).append(image)
+    for item in order_items: items_by_order.setdefault(item["order_id"],[]).append(item)
     con.close()
-    return render_template("admin.html",products=products,orders=orders,users=users,settings=settings,images_by_product=images_by_product)
+    return render_template("admin.html",products=products,orders=orders,users=users,settings=settings,images_by_product=images_by_product,items_by_order=items_by_order,questions=questions)
+
+@app.post("/admin/questions/<int:qid>/answer")
+@admin_required
+def answer_product_question(qid):
+    answer=request.form.get("answer","").strip()
+    if not answer:
+        flash("답변 내용을 입력해주세요.")
+        return redirect(url_for("admin")+"#product-questions")
+    con=db()
+    con.execute("""UPDATE product_questions
+                   SET answer=%s, answered_at=CURRENT_TIMESTAMP
+                   WHERE id=%s""",(answer,qid))
+    con.commit()
+    con.close()
+    flash("상품 문의 답변이 등록되었습니다.")
+    return redirect(url_for("admin")+"#product-questions")
 
 @app.post("/admin/design")
 @admin_required
