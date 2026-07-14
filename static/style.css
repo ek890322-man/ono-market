@@ -20,3 +20,22 @@
 .rich-cart{display:grid!important;grid-template-columns:58px 1fr auto;gap:10px;align-items:center}
 .cartpic{width:58px;height:58px;border-radius:10px;background:#f3f4f6;overflow:hidden;display:flex;align-items:center;justify-content:center;font-size:25px}
 .cartpic img{width:100%;height:100%;object-fit:cover}.cartdesc{display:flex;flex-direction:column;gap:4px}.cartdesc small{color:#6b7280}.cartqty{display:flex;gap:7px;align-items:center}.cartqty button{padding:5px 9px}.cartqty .remove{background:#fff;color:#6b7280;border:1px solid #ddd}.carttotal,.paytotal,.orderline{display:flex;justify-content:space-between;gap:12px}.carttotal{padding:16px 0;font-size:18px}.ordersummary{background:#f8fafc;padding:15px;border-radius:12px}.orderline{padding:7px 0}.paytotal{border-top:1px solid #ddd;margin-top:10px;padding-top:13px;font-size:18px}.checkoutform{max-height:90vh;overflow:auto}.paymethods{display:grid;gap:8px;margin-bottom:10px}.paymethods label{border:1px solid #ddd;border-radius:9px;padding:12px}.paynotice{background:#fef3c7;color:#92400e;padding:10px;border-radius:9px;font-size:13px}.emptycart{text-align:center;color:#6b7280;padding:30px 0}
+
+/* ONO MARKET typography tune */
+.card .meta{font-size:13px}
+.card h3{font-size:17px;line-height:1.35;margin:10px 0 6px}
+.card p{font-size:14px;line-height:1.45}
+.card .price,.card strong{font-size:17px}
+.card .actions button,.card button{font-size:14px;line-height:1.25}
+.filters button{font-size:14px}
+.signup-form{max-width:520px}
+.signup-help{font-size:14px;color:#6b7280;margin-top:-6px}
+.address-search-row{display:grid;grid-template-columns:1fr 130px;gap:8px}
+.address-search-row input{min-width:0}
+.address-search-btn{margin:0!important;white-space:nowrap}
+@media(max-width:600px){
+  .card h3{font-size:16px}
+  .card p{font-size:13px}
+  .card .actions button,.card button{font-size:13px;padding-left:8px;padding-right:8px}
+  .address-search-row{grid-template-columns:1fr 105px}
+}

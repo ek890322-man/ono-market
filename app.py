@@ -199,12 +199,18 @@ def signup():
         pw=request.form["password"]
         name=request.form["name"].strip()
         phone=request.form["phone"].strip()
+        postcode=request.form.get("postcode","").strip()
+        address=request.form.get("address","").strip()
+        detail_address=request.form.get("detail_address","").strip()
+        full_address=f"[{postcode}] {address} {detail_address}".strip()
         if len(pw)<6:
             flash("비밀번호는 6자 이상 입력해주세요."); return render_template("signup.html")
+        if not address or not detail_address:
+            flash("배송지 주소와 상세주소를 입력해주세요."); return render_template("signup.html")
         con=db()
         try:
-            con.execute("INSERT INTO users(email,password_hash,name,phone) VALUES(%s,%s,%s,%s)",
-                        (email,generate_password_hash(pw),name,phone))
+            con.execute("INSERT INTO users(email,password_hash,name,phone,address) VALUES(%s,%s,%s,%s,%s)",
+                        (email,generate_password_hash(pw),name,phone,full_address))
             con.commit(); flash("회원가입 완료! 로그인해주세요."); return redirect(url_for("login"))
         except UniqueViolation:
             flash("이미 가입된 이메일입니다.")

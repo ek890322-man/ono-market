@@ -1,1 +1,33 @@
-{% extends "base.html" %}{% block body %}<div class="center"><form class="panel auth" method="post"><h1>회원가입</h1><input type="email" name="email" placeholder="이메일" required><input type="password" name="password" placeholder="비밀번호 6자 이상" required><input name="name" placeholder="이름" required><input name="phone" placeholder="전화번호" required><button>가입하기</button><p>이미 회원인가요? <a href="/login">로그인</a></p></form></div>{% endblock %}
+{% extends "base.html" %}{% block body %}
+<div class="center">
+<form class="panel auth signup-form" method="post">
+  <h1>회원가입</h1>
+  <p class="signup-help">회원정보와 기본 배송지를 입력해주세요.</p>
+  <input type="email" name="email" placeholder="이메일" required>
+  <input type="password" name="password" placeholder="비밀번호 6자 이상" required>
+  <input name="name" placeholder="이름" required>
+  <input name="phone" placeholder="전화번호" required>
+  <div class="address-search-row">
+    <input id="postcode" name="postcode" placeholder="우편번호" readonly required>
+    <button type="button" class="address-search-btn" onclick="openPostcode()">주소 검색</button>
+  </div>
+  <input id="address" name="address" placeholder="배송지 주소" readonly required>
+  <input id="detail_address" name="detail_address" placeholder="상세주소 (동/호수 등)" required>
+  <button>가입하기</button>
+  <p>이미 회원인가요? <a href="/login">로그인</a></p>
+</form>
+</div>
+<script src="https://t1.daumcdn.net/mapjsapi/bundle/postcode/prod/postcode.v2.js"></script>
+<script>
+function openPostcode(){
+  new daum.Postcode({
+    oncomplete:function(data){
+      const addr = data.userSelectedType === 'R' ? data.roadAddress : data.jibunAddress;
+      document.getElementById('postcode').value = data.zonecode;
+      document.getElementById('address').value = addr;
+      document.getElementById('detail_address').focus();
+    }
+  }).open();
+}
+</script>
+{% endblock %}
