@@ -1,6 +1,9 @@
 
-from flask import Flask, render_template, request, redirect, url_for, session, jsonify, flash
-import sqlite3, os
+from flask import Flask, render_template, request, redirect, url_for, session, jsonify, flash, abort
+import os
+import psycopg
+from psycopg.rows import dict_row
+from psycopg.errors import UniqueViolation
 from functools import wraps
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
@@ -10,9 +13,9 @@ import cloudinary.uploader
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-secret-change-me")
-DATA_DIR = os.environ.get("DATA_DIR", os.path.dirname(os.path.abspath(__file__)))
-os.makedirs(DATA_DIR, exist_ok=True)
-DB = os.path.join(DATA_DIR, "shop.db")
+DATABASE_URL = os.environ.get("DATABASE_URL")
+if not DATABASE_URL:
+    raise RuntimeError("DATABASE_URL 환경변수가 필요합니다.")
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "change-me")
 CLOUDINARY_CLOUD_NAME=os.environ.get("CLOUDINARY_CLOUD_NAME")
 CLOUDINARY_API_KEY=os.environ.get("CLOUDINARY_API_KEY")
@@ -51,89 +54,97 @@ def delete_cloud_image(public_id):
         pass
 
 def db():
-    con = sqlite3.connect(DB)
-    con.row_factory = sqlite3.Row
-    return con
+    return psycopg.connect(DATABASE_URL, row_factory=dict_row)
 
 def init_db():
     con=db()
-    con.executescript("""
-    CREATE TABLE IF NOT EXISTS users(
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      email TEXT UNIQUE NOT NULL,
-      password_hash TEXT NOT NULL,
-      name TEXT NOT NULL,
-      phone TEXT NOT NULL DEFAULT '',
-      address TEXT NOT NULL DEFAULT '',
-      status TEXT NOT NULL DEFAULT '정상',
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    );
-    CREATE TABLE IF NOT EXISTS products(
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT NOT NULL, category TEXT NOT NULL, price INTEGER NOT NULL,
-      stock INTEGER NOT NULL DEFAULT 0, emoji TEXT DEFAULT '📦',
-      description TEXT DEFAULT '', active INTEGER DEFAULT 1
-    );
-    CREATE TABLE IF NOT EXISTS orders(
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id INTEGER,
-      customer_name TEXT NOT NULL, phone TEXT NOT NULL, address TEXT NOT NULL,
-      memo TEXT DEFAULT '', total INTEGER NOT NULL, status TEXT DEFAULT '주문접수',
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    );
-    CREATE TABLE IF NOT EXISTS order_items(
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      order_id INTEGER NOT NULL, product_id INTEGER NOT NULL,
-      product_name TEXT NOT NULL, price INTEGER NOT NULL, qty INTEGER NOT NULL
-    );
-    """)
-    con.execute("""CREATE TABLE IF NOT EXISTS site_settings(
-      id INTEGER PRIMARY KEY,
-      shop_name TEXT NOT NULL DEFAULT 'ONO MARKET',
-      hero_title TEXT NOT NULL DEFAULT 'GOOD THINGS, EVERY DAY.',
-      hero_text TEXT NOT NULL DEFAULT '매일 쓰는 물건일수록, 더 좋은 것으로.',
-      accent_color TEXT NOT NULL DEFAULT '#111827',
-      background_color TEXT NOT NULL DEFAULT '#f6f6f2',
-      hero_start TEXT NOT NULL DEFAULT '#e9e3d7',
-      hero_end TEXT NOT NULL DEFAULT '#cbd5c0'
-    )""")
-    con.execute("INSERT OR IGNORE INTO site_settings(id) VALUES(1)")
+    with con.cursor() as cur:
+        cur.execute("""
+        CREATE TABLE IF NOT EXISTS users(
+          id BIGSERIAL PRIMARY KEY,
+          email TEXT UNIQUE NOT NULL,
+          password_hash TEXT NOT NULL,
+          name TEXT NOT NULL,
+          phone TEXT NOT NULL DEFAULT '',
+          address TEXT NOT NULL DEFAULT '',
+          status TEXT NOT NULL DEFAULT '정상',
+          created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+        )
+        """)
+        cur.execute("""
+        CREATE TABLE IF NOT EXISTS products(
+          id BIGSERIAL PRIMARY KEY,
+          name TEXT NOT NULL,
+          category TEXT NOT NULL,
+          price INTEGER NOT NULL,
+          stock INTEGER NOT NULL DEFAULT 0,
+          emoji TEXT DEFAULT '📦',
+          description TEXT DEFAULT '',
+          active INTEGER DEFAULT 1,
+          main_image TEXT DEFAULT '',
+          main_image_public_id TEXT DEFAULT ''
+        )
+        """)
+        cur.execute("""
+        CREATE TABLE IF NOT EXISTS orders(
+          id BIGSERIAL PRIMARY KEY,
+          user_id BIGINT,
+          customer_name TEXT NOT NULL,
+          phone TEXT NOT NULL,
+          address TEXT NOT NULL,
+          memo TEXT DEFAULT '',
+          total INTEGER NOT NULL,
+          status TEXT DEFAULT '주문접수',
+          created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+        )
+        """)
+        cur.execute("""
+        CREATE TABLE IF NOT EXISTS order_items(
+          id BIGSERIAL PRIMARY KEY,
+          order_id BIGINT NOT NULL,
+          product_id BIGINT NOT NULL,
+          product_name TEXT NOT NULL,
+          price INTEGER NOT NULL,
+          qty INTEGER NOT NULL
+        )
+        """)
+        cur.execute("""
+        CREATE TABLE IF NOT EXISTS product_images(
+          id BIGSERIAL PRIMARY KEY,
+          product_id BIGINT NOT NULL,
+          filename TEXT NOT NULL,
+          sort_order INTEGER NOT NULL DEFAULT 0,
+          public_id TEXT DEFAULT ''
+        )
+        """)
+        cur.execute("""
+        CREATE TABLE IF NOT EXISTS site_settings(
+          id INTEGER PRIMARY KEY,
+          shop_name TEXT NOT NULL DEFAULT 'ONO MARKET',
+          hero_title TEXT NOT NULL DEFAULT 'GOOD THINGS, EVERY DAY.',
+          hero_text TEXT NOT NULL DEFAULT '매일 쓰는 물건일수록, 더 좋은 것으로.',
+          accent_color TEXT NOT NULL DEFAULT '#111827',
+          background_color TEXT NOT NULL DEFAULT '#f6f6f2',
+          hero_start TEXT NOT NULL DEFAULT '#e9e3d7',
+          hero_end TEXT NOT NULL DEFAULT '#cbd5c0'
+        )
+        """)
+        cur.execute("INSERT INTO site_settings(id) VALUES(1) ON CONFLICT (id) DO NOTHING")
+        cur.execute("SELECT COUNT(*) AS c FROM products")
+        if cur.fetchone()["c"] == 0:
+            seed=[
+              ("데일리 머그 2P","리빙",18900,20,"☕","매일 쓰기 좋은 심플한 머그 세트"),
+              ("소프트 실리콘 식판","육아",23900,15,"🧸","부드럽고 관리가 쉬운 식판"),
+              ("포근 코튼 타월 세트","리빙",32900,12,"🛁","도톰한 데일리 코튼 타월"),
+              ("우드 핸들 커트러리","키친",27900,10,"🍴","따뜻한 무드의 커트러리"),
+              ("데일리 베이비 빕","육아",15900,25,"👶","가볍고 편한 데일리 빕"),
+              ("클리어 글라스 4P","키친",24900,8,"🥛","깔끔한 투명 글라스 세트")
+            ]
+            cur.executemany("INSERT INTO products(name,category,price,stock,emoji,description) VALUES(%s,%s,%s,%s,%s,%s)",seed)
+    con.commit()
+    con.close()
 
-    product_cols={r["name"] for r in con.execute("PRAGMA table_info(products)").fetchall()}
-    if "main_image" not in product_cols:
-        con.execute("ALTER TABLE products ADD COLUMN main_image TEXT DEFAULT ''")
-    if "main_image_public_id" not in product_cols:
-        con.execute("ALTER TABLE products ADD COLUMN main_image_public_id TEXT DEFAULT ''")
-
-    con.execute("""CREATE TABLE IF NOT EXISTS product_images(
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      product_id INTEGER NOT NULL,
-      filename TEXT NOT NULL,
-      sort_order INTEGER NOT NULL DEFAULT 0,
-      public_id TEXT DEFAULT ''
-    )""")
-    image_cols={r["name"] for r in con.execute("PRAGMA table_info(product_images)").fetchall()}
-    if "public_id" not in image_cols:
-        con.execute("ALTER TABLE product_images ADD COLUMN public_id TEXT DEFAULT ''")
-
-    if con.execute("SELECT COUNT(*) c FROM products").fetchone()["c"] == 0:
-        seed=[
-          ("데일리 머그 2P","리빙",18900,20,"☕","매일 쓰기 좋은 심플한 머그 세트"),
-          ("소프트 실리콘 식판","육아",23900,15,"🧸","부드럽고 관리가 쉬운 식판"),
-          ("포근 코튼 타월 세트","리빙",32900,12,"🛁","도톰한 데일리 코튼 타월"),
-          ("우드 핸들 커트러리","키친",27900,10,"🍴","따뜻한 무드의 커트러리"),
-          ("데일리 베이비 빕","육아",15900,25,"👶","가볍고 편한 데일리 빕"),
-          ("클리어 글라스 4P","키친",24900,8,"🥛","깔끔한 투명 글라스 세트")
-        ]
-        con.executemany("INSERT INTO products(name,category,price,stock,emoji,description) VALUES(?,?,?,?,?,?)",seed)
-    con.commit(); con.close()
-
-# 서버 프로세스 시작 시 DB 스키마를 먼저 보정합니다.
 init_db()
-
-@app.before_request
-def setup():
-    init_db()
 
 def login_required(f):
     @wraps(f)
@@ -174,10 +185,10 @@ def signup():
             flash("비밀번호는 6자 이상 입력해주세요."); return render_template("signup.html")
         con=db()
         try:
-            con.execute("INSERT INTO users(email,password_hash,name,phone) VALUES(?,?,?,?)",
+            con.execute("INSERT INTO users(email,password_hash,name,phone) VALUES(%s,%s,%s,%s)",
                         (email,generate_password_hash(pw),name,phone))
             con.commit(); flash("회원가입 완료! 로그인해주세요."); return redirect(url_for("login"))
-        except sqlite3.IntegrityError:
+        except UniqueViolation:
             flash("이미 가입된 이메일입니다.")
         finally: con.close()
     return render_template("signup.html")
@@ -186,7 +197,7 @@ def signup():
 def login():
     if request.method=="POST":
         con=db()
-        u=con.execute("SELECT * FROM users WHERE email=?",(request.form["email"].strip().lower(),)).fetchone()
+        u=con.execute("SELECT * FROM users WHERE email=%s",(request.form["email"].strip().lower(),)).fetchone()
         con.close()
         if u and check_password_hash(u["password_hash"],request.form["password"]):
             if u["status"]!="정상":
@@ -206,30 +217,30 @@ def logout():
 def mypage():
     con=db()
     if request.method=="POST":
-        con.execute("UPDATE users SET name=?,phone=?,address=? WHERE id=?",
+        con.execute("UPDATE users SET name=%s,phone=%s,address=%s WHERE id=%s",
                     (request.form["name"],request.form["phone"],request.form["address"],session["user_id"]))
         con.commit(); session["user_name"]=request.form["name"]; flash("회원정보가 수정되었습니다.")
-    u=con.execute("SELECT * FROM users WHERE id=?",(session["user_id"],)).fetchone()
-    orders=con.execute("SELECT * FROM orders WHERE user_id=? ORDER BY id DESC",(session["user_id"],)).fetchall()
+    u=con.execute("SELECT * FROM users WHERE id=%s",(session["user_id"],)).fetchone()
+    orders=con.execute("SELECT * FROM orders WHERE user_id=%s ORDER BY id DESC",(session["user_id"],)).fetchall()
     con.close()
     return render_template("mypage.html",u=u,orders=orders)
 
 @app.post("/password")
 @login_required
 def password():
-    con=db(); u=con.execute("SELECT * FROM users WHERE id=?",(session["user_id"],)).fetchone()
+    con=db(); u=con.execute("SELECT * FROM users WHERE id=%s",(session["user_id"],)).fetchone()
     if not check_password_hash(u["password_hash"],request.form["current"]):
         con.close(); flash("현재 비밀번호가 틀렸습니다."); return redirect(url_for("mypage"))
     if len(request.form["new"])<6:
         con.close(); flash("새 비밀번호는 6자 이상이어야 합니다."); return redirect(url_for("mypage"))
-    con.execute("UPDATE users SET password_hash=? WHERE id=?",(generate_password_hash(request.form["new"]),session["user_id"]))
+    con.execute("UPDATE users SET password_hash=%s WHERE id=%s",(generate_password_hash(request.form["new"]),session["user_id"]))
     con.commit(); con.close(); flash("비밀번호를 변경했습니다.")
     return redirect(url_for("mypage"))
 
 @app.post("/withdraw")
 @login_required
 def withdraw():
-    con=db(); con.execute("UPDATE users SET status='탈퇴' WHERE id=?",(session["user_id"],)); con.commit(); con.close()
+    con=db(); con.execute("UPDATE users SET status='탈퇴' WHERE id=%s",(session["user_id"],)); con.commit(); con.close()
     session.clear(); flash("회원 탈퇴 처리되었습니다."); return redirect(url_for("home"))
 
 @app.post("/api/orders")
@@ -239,20 +250,20 @@ def create_order():
         return jsonify({"error":"주문 정보를 확인해주세요."}),400
     con=db()
     try:
-        con.execute("BEGIN IMMEDIATE"); items=[]; total=0
+        items=[]; total=0
         for x in cart:
-            p=con.execute("SELECT * FROM products WHERE id=? AND active=1",(int(x["id"]),)).fetchone()
+            p=con.execute("SELECT * FROM products WHERE id=%s AND active=1 FOR UPDATE",(int(x["id"]),)).fetchone()
             qty=int(x["qty"])
             if not p or qty<1 or p["stock"]<qty: raise ValueError("상품 재고가 부족합니다.")
             total += p["price"]*qty; items.append((p,qty))
         cur=con.execute("""INSERT INTO orders(user_id,customer_name,phone,address,memo,total)
-                           VALUES(?,?,?,?,?,?)""",(session.get("user_id"),customer["name"],customer["phone"],
+                           VALUES(%s,%s,%s,%s,%s,%s) RETURNING id""",(session.get("user_id"),customer["name"],customer["phone"],
                            customer["address"],customer.get("memo",""),total))
-        oid=cur.lastrowid
+        oid=cur.fetchone()["id"]
         for p,qty in items:
-            con.execute("INSERT INTO order_items(order_id,product_id,product_name,price,qty) VALUES(?,?,?,?,?)",
+            con.execute("INSERT INTO order_items(order_id,product_id,product_name,price,qty) VALUES(%s,%s,%s,%s,%s)",
                         (oid,p["id"],p["name"],p["price"],qty))
-            con.execute("UPDATE products SET stock=stock-? WHERE id=?",(qty,p["id"]))
+            con.execute("UPDATE products SET stock=stock-%s WHERE id=%s",(qty,p["id"]))
         con.commit(); return jsonify({"ok":True,"order_id":oid})
     except ValueError as e:
         con.rollback(); return jsonify({"error":str(e)}),409
@@ -289,8 +300,8 @@ def admin():
 def admin_design():
     f=request.form
     con=db()
-    con.execute("""UPDATE site_settings SET shop_name=?, hero_title=?, hero_text=?,
-                   accent_color=?, background_color=?, hero_start=?, hero_end=? WHERE id=1""",
+    con.execute("""UPDATE site_settings SET shop_name=%s, hero_title=%s, hero_text=%s,
+                   accent_color=%s, background_color=%s, hero_start=%s, hero_end=%s WHERE id=1""",
                 (f["shop_name"], f["hero_title"], f["hero_text"], f["accent_color"],
                  f["background_color"], f["hero_start"], f["hero_end"]))
     con.commit()
@@ -308,12 +319,12 @@ def add_product():
         main_public_id=main_public_id or ""
         con=db()
         cur=con.execute("""INSERT INTO products(name,category,price,stock,emoji,description,main_image,main_image_public_id)
-        VALUES(?,?,?,?,?,?,?,?)""",(f["name"],f["category"],int(f["price"]),int(f["stock"]),f.get("emoji","📦"),f.get("description",""),main_image,main_public_id))
-        pid=cur.lastrowid
+        VALUES(%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",(f["name"],f["category"],int(f["price"]),int(f["stock"]),f.get("emoji","📦"),f.get("description",""),main_image,main_public_id))
+        pid=cur.fetchone()["id"]
         for order,file in enumerate(request.files.getlist("detail_images")):
             image_url,public_id=save_image(file)
             if image_url:
-                con.execute("INSERT INTO product_images(product_id,filename,sort_order,public_id) VALUES(?,?,?,?)",(pid,image_url,order,public_id or ""))
+                con.execute("INSERT INTO product_images(product_id,filename,sort_order,public_id) VALUES(%s,%s,%s,%s)",(pid,image_url,order,public_id or ""))
         con.commit()
     except (ValueError, Exception) as e:
         if con: con.rollback()
@@ -327,7 +338,7 @@ def add_product():
 def edit_product(pid):
     f=request.form
     con=db()
-    p=con.execute("SELECT * FROM products WHERE id=?",(pid,)).fetchone()
+    p=con.execute("SELECT * FROM products WHERE id=%s",(pid,)).fetchone()
     if not p:
         con.close()
         abort(404)
@@ -335,14 +346,14 @@ def edit_product(pid):
         new_url,new_public_id=save_image(request.files.get("main_image"))
         main_image=new_url or p["main_image"]
         main_public_id=new_public_id or p["main_image_public_id"]
-        con.execute("""UPDATE products SET name=?,category=?,price=?,stock=?,emoji=?,description=?,main_image=?,main_image_public_id=? WHERE id=?""",
+        con.execute("""UPDATE products SET name=%s,category=%s,price=%s,stock=%s,emoji=%s,description=%s,main_image=%s,main_image_public_id=%s WHERE id=%s""",
         (f["name"],f["category"],int(f["price"]),int(f["stock"]),f.get("emoji","📦"),f.get("description",""),main_image,main_public_id,pid))
         if new_url:
             delete_cloud_image(p["main_image_public_id"])
         for order,file in enumerate(request.files.getlist("detail_images")):
             image_url,public_id=save_image(file)
             if image_url:
-                con.execute("INSERT INTO product_images(product_id,filename,sort_order,public_id) VALUES(?,?,?,?)",(pid,image_url,order+100,public_id or ""))
+                con.execute("INSERT INTO product_images(product_id,filename,sort_order,public_id) VALUES(%s,%s,%s,%s)",(pid,image_url,order+100,public_id or ""))
         con.commit()
     except Exception as e:
         con.rollback()
@@ -354,28 +365,28 @@ def edit_product(pid):
 @app.post("/admin/product-images/<int:image_id>/delete")
 @admin_required
 def delete_product_image(image_id):
-    con=db(); image=con.execute("SELECT * FROM product_images WHERE id=?",(image_id,)).fetchone()
+    con=db(); image=con.execute("SELECT * FROM product_images WHERE id=%s",(image_id,)).fetchone()
     if image:
-        con.execute("DELETE FROM product_images WHERE id=?",(image_id,)); con.commit()
+        con.execute("DELETE FROM product_images WHERE id=%s",(image_id,)); con.commit()
         delete_cloud_image(image["public_id"])
     con.close(); return redirect(url_for("admin"))
 
 @app.post("/admin/products/<int:pid>/stock")
 @admin_required
 def stock(pid):
-    con=db(); con.execute("UPDATE products SET stock=? WHERE id=?",(int(request.form["stock"]),pid)); con.commit(); con.close()
+    con=db(); con.execute("UPDATE products SET stock=%s WHERE id=%s",(int(request.form["stock"]),pid)); con.commit(); con.close()
     return redirect(url_for("admin"))
 
 @app.post("/admin/users/<int:uid>/status")
 @admin_required
 def user_status(uid):
-    con=db(); con.execute("UPDATE users SET status=? WHERE id=?",(request.form["status"],uid)); con.commit(); con.close()
+    con=db(); con.execute("UPDATE users SET status=%s WHERE id=%s",(request.form["status"],uid)); con.commit(); con.close()
     return redirect(url_for("admin"))
 
 @app.post("/admin/orders/<int:oid>/status")
 @admin_required
 def order_status(oid):
-    con=db(); con.execute("UPDATE orders SET status=? WHERE id=?",(request.form["status"],oid)); con.commit(); con.close()
+    con=db(); con.execute("UPDATE orders SET status=%s WHERE id=%s",(request.form["status"],oid)); con.commit(); con.close()
     return redirect(url_for("admin"))
 
 if __name__=="__main__":
