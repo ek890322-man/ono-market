@@ -1,0 +1,42 @@
+{% extends "base.html" %}{% block body %}
+<main class="admin-subpage">
+<div class="admin-subhead"><div><a href="/admin">← 관리자 홈</a><h1>주문 관리</h1><p>접수된 주문과 배송 상태를 관리합니다.</p></div><a href="/admin/logout">관리자 로그아웃</a></div>
+<section class="panel"><h2>주문 관리</h2>
+{% for o in orders %}
+<details class="admin-order">
+  <summary>
+    <span><b>#{{o.id}} {{o.customer_name}}</b><small>{{o.created_at}}</small></span>
+    <span>{{"{:,}".format(o.total)}}원</span>
+    <span class="order-status">{{o.status}}</span>
+    <span class="detail-label">주문 상세보기</span>
+  </summary>
+  <div class="admin-order-body">
+    <div class="order-info-grid">
+      <div><b>주문자</b><span>{{o.customer_name}}</span></div>
+      <div><b>연락처</b><span>{{o.phone}}</span></div>
+      <div class="wide"><b>배송주소</b><span>{{o.address}}</span></div>
+      <div class="wide"><b>배송메모 / 결제수단</b><span>{{o.memo or '없음'}}</span></div>
+    </div>
+    <div class="admin-order-items">
+      <h3>주문 상품</h3>
+      {% for item in items_by_order.get(o.id,[]) %}
+      <div class="admin-order-item">
+        <span><b>{{item.product_name}}</b><small>{{"{:,}".format(item.price)}}원 × {{item.qty}}개</small></span>
+        <strong>{{"{:,}".format(item.price * item.qty)}}원</strong>
+      </div>
+      {% else %}<p>주문 상품 정보 없음</p>{% endfor %}
+      <div class="admin-order-total"><span>상품금액</span><b>{{"{:,}".format(o.subtotal if o.subtotal else o.total + o.points_used)}}원</b></div>
+      <div class="admin-order-total"><span>포인트 사용</span><b>-{{"{:,}".format(o.points_used)}}P</b></div>
+      <div class="admin-order-total"><span>최종 결제금액</span><b>{{"{:,}".format(o.total)}}원</b></div>
+    </div>
+    <form class="order-status-form" method="post" action="/admin/orders/{{o.id}}/status">
+      <label>주문 상태
+      <select name="status">{% for s in ['주문접수','결제확인','배송준비','배송중','완료','취소'] %}<option {% if o.status==s %}selected{% endif %}>{{s}}</option>{% endfor %}</select>
+      </label>
+      <button>상태 변경</button>
+    </form>
+  </div>
+</details>
+{% else %}<p>주문 없음</p>{% endfor %}
+</section>
+</main>{% endblock %}

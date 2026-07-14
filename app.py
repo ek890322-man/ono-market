@@ -474,13 +474,36 @@ def admin():
     con.close()
     return render_template("admin.html",products=products,orders=orders,users=users,settings=settings,images_by_product=images_by_product,items_by_order=items_by_order,questions=questions)
 
+@app.get("/admin/orders")
+@admin_required
+def admin_orders():
+    con=db()
+    orders=con.execute("SELECT * FROM orders ORDER BY id DESC").fetchall()
+    order_items=con.execute("SELECT * FROM order_items ORDER BY order_id,id").fetchall()
+    items_by_order={}
+    for item in order_items:
+        items_by_order.setdefault(item["order_id"],[]).append(item)
+    con.close()
+    return render_template("admin_orders.html",orders=orders,items_by_order=items_by_order)
+
+@app.get("/admin/questions")
+@admin_required
+def admin_questions():
+    con=db()
+    questions=con.execute("""SELECT q.*, p.name AS product_name
+                             FROM product_questions q
+                             JOIN products p ON p.id=q.product_id
+                             ORDER BY q.id DESC""").fetchall()
+    con.close()
+    return render_template("admin_questions.html",questions=questions)
+
 @app.post("/admin/questions/<int:qid>/answer")
 @admin_required
 def answer_product_question(qid):
     answer=request.form.get("answer","").strip()
     if not answer:
         flash("답변 내용을 입력해주세요.")
-        return redirect(url_for("admin")+"#product-questions")
+        return redirect(url_for("admin_questions"))
     con=db()
     con.execute("""UPDATE product_questions
                    SET answer=%s, answered_at=CURRENT_TIMESTAMP
@@ -488,7 +511,7 @@ def answer_product_question(qid):
     con.commit()
     con.close()
     flash("상품 문의 답변이 등록되었습니다.")
-    return redirect(url_for("admin")+"#product-questions")
+    return redirect(url_for("admin_questions"))
 
 @app.post("/admin/design")
 @admin_required
@@ -620,7 +643,7 @@ def order_status(oid):
     send_sms(order["phone"],f"[ONO MARKET] 주문 #{oid} 상태가 '{status}'(으)로 변경되었습니다.")
     if awarded_points > 0:
         send_sms(order["phone"],f"[ONO MARKET] 주문 #{oid} 구매 적립금 {awarded_points:,}P가 적립되었습니다.")
-    return redirect(url_for("admin"))
+    return redirect(url_for("admin_orders"))
 
 if __name__=="__main__":
     init_db()

@@ -17,52 +17,9 @@
 document.addEventListener("DOMContentLoaded",()=>{const f=document.getElementById("designForm");const u=()=>{pvName.textContent=f.shop_name.value;pvTitle.textContent=f.hero_title.value;pvText.textContent=f.hero_text.value;sitePreview.style.background=f.background_color.value;pvHero.style.background=`linear-gradient(135deg,${f.hero_start.value},${f.hero_end.value})`;pvButton.style.background=f.accent_color.value};f.addEventListener("input",u);u()});
 </script><div class="adminhead"><h1>관리자</h1><a href="/admin/logout">관리자 로그아웃</a></div>
 <section class="panel"><h2>회원 관리</h2>{% for u in users %}<div class="tr wrap"><span><b>{{u.name}}</b><br>{{u.email}} · {{u.phone}}</span><span>주문 {{u.order_count}}건<br>누적 {{"{:,}".format(u.spent)}}원</span><span>가입 {{u.created_at}}</span><form method="post" action="/admin/users/{{u.id}}/status"><select name="status"><option {% if u.status=='정상' %}selected{% endif %}>정상</option><option {% if u.status=='정지' %}selected{% endif %}>정지</option><option {% if u.status=='탈퇴' %}selected{% endif %}>탈퇴</option></select><button>변경</button></form></div>{% else %}<p>회원 없음</p>{% endfor %}</section>
-<section class="panel"><h2>주문 관리</h2>
-{% for o in orders %}
-<details class="admin-order">
-  <summary>
-    <span><b>#{{o.id}} {{o.customer_name}}</b><small>{{o.created_at}}</small></span>
-    <span>{{"{:,}".format(o.total)}}원</span>
-    <span class="order-status">{{o.status}}</span>
-    <span class="detail-label">주문 상세보기</span>
-  </summary>
-  <div class="admin-order-body">
-    <div class="order-info-grid">
-      <div><b>주문자</b><span>{{o.customer_name}}</span></div>
-      <div><b>연락처</b><span>{{o.phone}}</span></div>
-      <div class="wide"><b>배송주소</b><span>{{o.address}}</span></div>
-      <div class="wide"><b>배송메모 / 결제수단</b><span>{{o.memo or '없음'}}</span></div>
-    </div>
-    <div class="admin-order-items">
-      <h3>주문 상품</h3>
-      {% for item in items_by_order.get(o.id,[]) %}
-      <div class="admin-order-item">
-        <span><b>{{item.product_name}}</b><small>{{"{:,}".format(item.price)}}원 × {{item.qty}}개</small></span>
-        <strong>{{"{:,}".format(item.price * item.qty)}}원</strong>
-      </div>
-      {% else %}<p>주문 상품 정보 없음</p>{% endfor %}
-      <div class="admin-order-total"><span>상품금액</span><b>{{"{:,}".format(o.subtotal if o.subtotal else o.total + o.points_used)}}원</b></div>
-      <div class="admin-order-total"><span>포인트 사용</span><b>-{{"{:,}".format(o.points_used)}}P</b></div>
-      <div class="admin-order-total"><span>최종 결제금액</span><b>{{"{:,}".format(o.total)}}원</b></div>
-    </div>
-    <form class="order-status-form" method="post" action="/admin/orders/{{o.id}}/status">
-      <label>주문 상태
-      <select name="status">{% for s in ['주문접수','결제확인','배송준비','배송중','완료','취소'] %}<option {% if o.status==s %}selected{% endif %}>{{s}}</option>{% endfor %}</select>
-      </label>
-      <button>상태 변경</button>
-    </form>
-  </div>
-</details>
-{% else %}<p>주문 없음</p>{% endfor %}
-</section>
-<section class="panel" id="product-questions"><h2>상품 문의 관리</h2>
-{% for q in questions %}
-<details class="admin-question">
-  <summary><span><b>{{q.product_name}}</b><small>{{q.user_name}} · {{q.created_at}}</small></span><span>{{q.question}}</span><b>{% if q.answer %}답변완료{% else %}답변대기{% endif %}</b></summary>
-  <div class="admin-question-body"><div class="admin-question-text"><b>문의 내용</b><p>{{q.question}}</p></div>
-  <form method="post" action="/admin/questions/{{q.id}}/answer"><label>관리자 답변<textarea name="answer" rows="4" required placeholder="고객에게 표시할 답변을 입력하세요.">{{q.answer}}</textarea></label><button>{% if q.answer %}답변 수정{% else %}답변 등록{% endif %}</button></form></div>
-</details>
-{% else %}<p>등록된 상품 문의가 없습니다.</p>{% endfor %}
+<section class="admin-manage-links">
+<a class="admin-manage-card" href="/admin/orders"><span>📦</span><div><h2>주문 관리</h2><p>주문 상세, 배송정보, 포인트 사용 및 주문 상태를 관리합니다.</p></div><b>바로가기 →</b></a>
+<a class="admin-manage-card" href="/admin/questions"><span>💬</span><div><h2>상품 문의 관리</h2><p>고객의 상품 문의를 확인하고 관리자 답변을 등록합니다.</p></div><b>바로가기 →</b></a>
 </section>
 <section class="panel"><h2>상품 등록</h2><form class="formgrid" method="post" action="/admin/products" enctype="multipart/form-data"><input name="name" placeholder="상품명" required><input name="category" placeholder="카테고리" required><input name="price" type="number" placeholder="가격" required><input name="stock" type="number" placeholder="재고" required><input name="emoji" placeholder="대표 이모지"><input name="description" placeholder="설명"><label>대표 이미지<input type="file" name="main_image" accept="image/*"></label><label>상세 이미지 여러 장<input type="file" name="detail_images" accept="image/*" multiple></label><button>등록</button></form></section>
 <section class="panel"><h2>상품 수정 · 이미지 관리</h2>{% for p in products %}<details class="productedit"><summary>{{p.emoji}} {{p.name}} · {{"{:,}".format(p.price)}}원 · 재고 {{p.stock}}</summary><form method="post" action="/admin/products/{{p.id}}/edit" enctype="multipart/form-data" class="editgrid"><input name="name" value="{{p.name}}" required><input name="category" value="{{p.category}}" required><input name="price" type="number" value="{{p.price}}" required><input name="stock" type="number" value="{{p.stock}}" required><input name="emoji" value="{{p.emoji}}"><textarea name="description">{{p.description}}</textarea><label>대표 이미지 변경<input type="file" name="main_image" accept="image/*"></label><label>상세 이미지 추가<input type="file" name="detail_images" accept="image/*" multiple></label>{% if p.main_image %}<div class="admin-main-image"><b>현재 대표 이미지</b><img class="adminthumb" src="{{p.main_image}}"><button type="submit" class="danger image-delete-btn" formaction="/admin/products/{{p.id}}/main-image/delete" formmethod="post" onclick="return confirm('대표 이미지를 삭제할까요?')">대표 이미지 삭제</button></div>{% endif %}<div class="adminimages">{% for image in images_by_product.get(p.id,[]) %}<div class="admin-image-item"><img src="{{image.filename}}"><button type="submit" class="danger image-delete-btn" formaction="/admin/product-images/{{image.id}}/delete" formmethod="post" onclick="return confirm('이 상세 이미지를 삭제할까요?')">상세 이미지 삭제</button></div>{% endfor %}</div><button>상품 정보 저장</button></form></details>{% endfor %}</section></main>{% endblock %}

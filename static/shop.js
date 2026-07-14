@@ -17,7 +17,17 @@ function updatePointPayment(){
   payTotal.textContent=won(orderSubtotalValue-points);
 }
 function useAllPoints(){pointsUsed.value=Math.min(ONO_USER_POINTS,orderSubtotalValue);updatePointPayment()}
-function showOrder(){if(!Object.keys(basket).length)return alert("상품을 담아주세요.");if(!ONO_LOGGED_IN){loginOrderModal.style.display="grid";return;}let sum=0;orderSummary.innerHTML=Object.entries(basket).map(([id,q])=>{let p=PRODUCTS.find(x=>x.id==id);if(!p)return"";sum+=p.price*q;return`<div class="orderline"><span>${p.name} × ${q}</span><b>${won(p.price*q)}</b></div>`}).join("");orderSubtotalValue=sum;pointsUsed.value=0;updatePointPayment();modal.style.display="grid"}orderForm.onsubmit=async e=>{e.preventDefault();let f=new FormData(e.target),customer=Object.fromEntries(f.entries());if(!customer.payment_method)return alert("결제수단을 선택해주세요.");customer.memo=`[결제수단: ${customer.payment_method}] ${customer.memo||""}`.trim();delete customer.payment_method;let body={customer,points_used:Number(pointsUsed.value)||0,cart:Object.entries(basket).map(([id,qty])=>({id:+id,qty}))};let r=await fetch("/api/orders",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)}),d=await r.json();if(!r.ok)return alert(d.error);alert(`주문 접수 완료! 주문번호 #${d.order_id}\n포인트 ${Number(d.points_used).toLocaleString()}P 사용\n최종 결제금액 ${Number(d.total).toLocaleString()}원\n현재는 실제 PG 승인 전 테스트 결제 단계입니다.`);basket={};save();location.href="/mypage"};search.oninput=render;renderFilters();render();renderCart();
+function showOrder(){if(!Object.keys(basket).length)return alert("상품을 담아주세요.");if(!ONO_LOGGED_IN){loginOrderModal.style.display="grid";return;}let sum=0;orderSummary.innerHTML=Object.entries(basket).map(([id,q])=>{let p=PRODUCTS.find(x=>x.id==id);if(!p)return"";sum+=p.price*q;return`<div class="orderline"><span>${p.name} × ${q}</span><b>${won(p.price*q)}</b></div>`}).join("");orderSubtotalValue=sum;pointsUsed.value=0;updatePointPayment();modal.style.display="grid"}function selectDeliveryMemo(value){
+  const memo=document.getElementById("deliveryMemo");
+  if(!memo)return;
+  if(value==="직접입력"){
+    memo.value="";
+    memo.focus();
+    return;
+  }
+  memo.value=value;
+}
+orderForm.onsubmit=async e=>{e.preventDefault();let f=new FormData(e.target),customer=Object.fromEntries(f.entries());if(!customer.payment_method)return alert("결제수단을 선택해주세요.");customer.memo=`[결제수단: ${customer.payment_method}] ${customer.memo||""}`.trim();delete customer.payment_method;let body={customer,points_used:Number(pointsUsed.value)||0,cart:Object.entries(basket).map(([id,qty])=>({id:+id,qty}))};let r=await fetch("/api/orders",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)}),d=await r.json();if(!r.ok)return alert(d.error);alert(`주문 접수 완료! 주문번호 #${d.order_id}\n포인트 ${Number(d.points_used).toLocaleString()}P 사용\n최종 결제금액 ${Number(d.total).toLocaleString()}원\n현재는 실제 PG 승인 전 테스트 결제 단계입니다.`);basket={};save();location.href="/mypage"};search.oninput=render;renderFilters();render();renderCart();
 const pageParams=new URLSearchParams(location.search);
 if(pageParams.get("cart")==="1"){openCart();history.replaceState({},document.title,"/")}
 if(pageParams.get("order")==="1"){showOrder();history.replaceState({},document.title,"/")}

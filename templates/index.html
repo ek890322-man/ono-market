@@ -17,5 +17,17 @@
   <div class="point-use-row"><input id="pointsUsed" type="number" min="0" value="0" placeholder="사용할 포인트"><button type="button" class="light" onclick="useAllPoints()">전액 사용</button></div>
 </div>
 <div class="pay-breakdown"><div><span>상품금액</span><b id="orderSubtotal">0원</b></div><div><span>포인트 사용</span><b id="pointDiscount">-0P</b></div></div>
-<div class="paytotal"><span>최종 결제금액</span><b id="payTotal">0원</b></div></section><h3>배송 정보</h3><input name="name" value="{{current_user.name if current_user else ''}}" placeholder="주문자명" required><input name="phone" value="{{current_user.phone if current_user else ''}}" placeholder="연락처" required><input name="address" value="{{current_user.address if current_user else ''}}" placeholder="배송 주소" required><textarea name="memo" placeholder="배송 메모"></textarea><h3>결제수단</h3><div class="paymethods"><label><input type="radio" name="payment_method" value="카드결제" checked> 카드결제</label><label><input type="radio" name="payment_method" value="계좌이체"> 계좌이체</label><label><input type="radio" name="payment_method" value="무통장입금"> 무통장입금</label></div><p class="paynotice">현재는 실제 PG 카드승인 전 주문·결제 화면 테스트 단계입니다.</p><button>결제 및 주문 접수</button><button type="button" class="light" onclick="modal.style.display='none'">취소</button></form></div>
+<div class="paytotal"><span>최종 결제금액</span><b id="payTotal">0원</b></div></section><h3>배송 정보</h3><input name="name" value="{{current_user.name if current_user else ''}}" placeholder="주문자명" required><input name="phone" value="{{current_user.phone if current_user else ''}}" placeholder="연락처" required><input name="address" value="{{current_user.address if current_user else ''}}" placeholder="배송 주소" required><div class="delivery-memo-box">
+<label for="deliveryMemoSelect">배송 메모</label>
+<select id="deliveryMemoSelect" onchange="selectDeliveryMemo(this.value)">
+<option value="">배송 메모를 선택해주세요</option>
+<option value="문 앞에 놓아주세요">문 앞에 놓아주세요</option>
+<option value="경비실에 맡겨주세요">경비실에 맡겨주세요</option>
+<option value="택배함에 넣어주세요">택배함에 넣어주세요</option>
+<option value="배송 전 연락 부탁드립니다">배송 전 연락 부탁드립니다</option>
+<option value="벨 누르지 말아주세요">벨 누르지 말아주세요</option>
+<option value="직접입력">직접 입력</option>
+</select>
+<textarea id="deliveryMemo" name="memo" placeholder="배송 메모를 직접 입력할 수도 있어요"></textarea>
+</div><h3>결제수단</h3><div class="paymethods"><label><input type="radio" name="payment_method" value="카드결제" checked> 카드결제</label><label><input type="radio" name="payment_method" value="계좌이체"> 계좌이체</label><label><input type="radio" name="payment_method" value="무통장입금"> 무통장입금</label></div><p class="paynotice">현재는 실제 PG 카드승인 전 주문·결제 화면 테스트 단계입니다.</p><button>결제 및 주문 접수</button><button type="button" class="light" onclick="modal.style.display='none'">취소</button></form></div>
 <script>window.PRODUCTS={{products_json|tojson}};const ONO_LOGGED_IN={{ 'true' if session.get('user_id') else 'false' }};const ONO_USER_POINTS={{ current_user.points if current_user else 0 }};</script><script src="{{url_for('static',filename='shop.js')}}"></script>{% endblock %}
